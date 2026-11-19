@@ -11,6 +11,8 @@ export global Theme {
     // 0 = system, 1 = light, 2 = dark (vykey_core::settings::ThemeMode).
     in-out property <int> mode: 0;
     out property <bool> dark: mode == 0 ? Palette.color-scheme == ColorScheme.dark : mode == 2;
+    // Window scale factor >= 1.5: use the @2x bitmaps. Set from Rust (App::tick).
+    in-out property <bool> hidpi: false;
 
     out property <color> bg-base: dark ? #0B0B10 : #F4F4F7;
     out property <color> bg-sidebar: dark ? #101017 : #ECECF1;
@@ -30,7 +32,6 @@ export global Theme {
     out property <color> shadow-modal: dark ? #00000080 : #17171C26;
     out property <color> overlay: #06060A99;
 
-    out property <brush> logo-gradient: @linear-gradient(135deg, #9A8FFF 0%, #5B45E0 100%);
     out property <brush> avatar-gradient: @linear-gradient(135deg, #3DD68C 0%, #2E9E8F 100%);
 
     out property <string> font: "Manrope";
@@ -39,7 +40,6 @@ export global Theme {
 
 // Font Awesome Free 6.7.2 (CC BY 4.0), see icons/LICENSE.txt.
 export global Icons {
-    out property <image> shield-halved: @image-url("icons/shield-halved.svg");
     out property <image> lock: @image-url("icons/lock.svg");
     out property <image> eye: @image-url("icons/eye.svg");
     out property <image> eye-slash: @image-url("icons/eye-slash.svg");

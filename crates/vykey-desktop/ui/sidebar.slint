@@ -2,7 +2,7 @@
 
 import { ScrollView } from "std-widgets.slint";
 import { Theme, Icons } from "theme.slint";
-import { Icon, NavItem, LogoMark, InitialsAvatar, IconAction, FolderItem, FolderDot } from "components.slint";
+import { Icon, NavItem, LogoMark, Wordmark, InitialsAvatar, IconAction, FolderItem, FolderDot } from "components.slint";
 
 // Folder row: dot, name, count. On hover the count gives way to "…"
 // (rename / delete), also opened with a right click.
@@ -183,13 +183,10 @@ export component Sidebar inherits Rectangle {
             padding-bottom: 12px;
             spacing: 10px;
 
-            LogoMark { size: 34px; }
-            Text {
-                text: "vykey";
-                font-size: 19px;
-                font-weight: 700;
-                color: Theme.text-primary;
-                vertical-alignment: center;
+            LogoMark { }
+            VerticalLayout {
+                alignment: center;
+                Wordmark { height-px: 20px; }
             }
         }
 

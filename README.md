@@ -1,3 +1,12 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo/vykey-lockup-lilac.png">
+    <img src="assets/logo/vykey-lockup-violet.png" alt="vykey" width="320">
+  </picture>
+</p>
+
+# vykey
+
 # vykey
 
 **vykey** (*Vault Your Keys*) is a local password manager written in Rust: a
@@ -21,8 +30,8 @@ upgrades them in place — see [docs/vault-format.md](docs/vault-format.md) and
 - Create, edit and delete entries; password generator with strength meter
 - Offline security audit: weak, reused and stale passwords, 2FA coverage
 - Settings: light, dark or system theme; interface language (English,
-  Russian; follows the system by default)
-- Auto-lock on inactivity, clipboard auto-clear after 30 s
+  Russian; follows the system by default); auto-lock delay
+- Auto-lock on inactivity (5 min by default), clipboard auto-clear after 30 s
 - Fingerprint unlock on Linux (fprintd), opt-in per vault — see below
 - Terminal client `vy`: full-screen TUI and Bitwarden CSV import
 
@@ -34,6 +43,7 @@ crates/vykey-biometric fingerprint unlock: fprintd + Secret Service (Linux)
 crates/vykey-desktop   Slint desktop app, binary `vykey` (ui/, src/, translations/)
 crates/vykey-cli       terminal client, binary `vy` (ratatui)
 docs/                  vault format spec
+assets/logo/           logo, wordmark, lockup and app icon (PNG)
 testdata/              fixture databases created by the Go app
 ```
 
@@ -107,12 +117,20 @@ What this protects against, and what not:
 | Variable             | Default                          |
 |----------------------|----------------------------------|
 | `VYKEY_DB_PATH`      | `$XDG_DATA_HOME/vykey/vykey.db` (or `~/.local/share/vykey/vykey.db`; macOS: `~/Library/Application Support/vykey/vykey.db`; Windows: `%APPDATA%\vykey\vykey.db`) |
-| `VYKEY_LOCK_TIMEOUT` | `5m`; Go duration syntax, `0` disables |
+| `VYKEY_LOCK_TIMEOUT` | unset: the delay from Settings (5 min by default). Overrides it when set; Go duration syntax (`30s`, `1h30m`), `0` disables |
 | `SLINT_BACKEND`      | software renderer (~30 MB RSS); `winit-femtovg` renders with OpenGL (smoother on very large windows, but loads GPU drivers: ~270 MB) |
 
-Preferences chosen in the app (theme) are stored in
+Preferences chosen in the app (theme, language, auto-lock) are stored in
 `$XDG_CONFIG_HOME/vykey/settings.json` (`~/.config/vykey/settings.json`; on
-macOS and Windows in the same directory as the database).
+macOS and Windows in the same directory as the database). The terminal
+client reads the same file:
+
+```json
+{ "theme": "system", "language": null, "lock_timeout": 300 }
+```
+
+`lock_timeout` is in seconds, `0` = never. Values other than the presets
+(1, 5, 15, 30 min, 1 h) can be set by hand and show up in the list.
 
 ## Migrating from kyp
 
