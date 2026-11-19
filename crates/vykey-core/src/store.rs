@@ -48,6 +48,24 @@ impl Vault {
         Ok(Self { meta, key })
     }
 
+    /// Opens the vault with an already derived key (e.g. one kept by the OS
+    /// keyring for fingerprint unlock). Cheap: no Argon2. Fails with
+    /// [`Error::WrongPassword`] if the key does not match the verifier — the
+    /// vault was re-created or the stored key is stale.
+    pub fn unlock_with_key(meta: VaultMeta, key: Key) -> Result<Self> {
+        if !crypto::check_verifier(&meta.verifier, &key) {
+            return Err(Error::WrongPassword);
+        }
+        Ok(Self { meta, key })
+    }
+
+    /// The master key. Anyone holding it (and the database) can read the
+    /// vault, so hand it only to storage that protects it, such as the OS
+    /// keyring for fingerprint unlock.
+    pub fn key(&self) -> &Key {
+        &self.key
+    }
+
     /// Prepares a new vault (not yet stored). CPU-heavy (Argon2id).
     pub fn create(name: &str, password: &str) -> Result<Self> {
         let salt = crypto::generate_salt();
@@ -819,6 +837,30 @@ mod tests {
             Err(Error::WrongPassword)
         ));
         Vault::unlock(meta, "pw").unwrap();
+    }
+
+    #[test]
+    fn unlock_with_key() {
+        let (_d, store) = store();
+        let v = Vault::create("main", "pw").unwrap();
+        store.insert_vault(&v).unwrap();
+        let mut input = EntryInput::default();
+        input.title = "t".into();
+        input.password = Some("secret".into());
+        let id = store.create_entry(&v, &input).unwrap();
+
+        let meta = store.vault_meta("main").unwrap();
+        let opened = Vault::unlock_with_key(meta.clone(), v.key().clone()).unwrap();
+        assert_eq!(
+            store.get_entry(&opened, &id).unwrap().password.as_deref(),
+            Some("secret")
+        );
+
+        let other = Vault::create("other", "pw").unwrap();
+        assert!(matches!(
+            Vault::unlock_with_key(meta, other.key().clone()),
+            Err(Error::WrongPassword)
+        ));
     }
 
     #[test]

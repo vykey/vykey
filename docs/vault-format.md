@@ -12,16 +12,16 @@ Source of truth: `crates/vykey-core` (`crypto.rs`, `store.rs`, `schema.rs`,
 ## Location
 
 1. `$VYKEY_DB_PATH`, if set.
-2. `$KYP_DB_PATH`, if set (pre-rename name; the Go app reads it too, and also
-   `db_path` from its YAML config).
-3. `<data dir>/vykey/vykey.db`, if it exists.
-4. `<data dir>/kyp/kyp.db`, if it exists (pre-rename / Go app location).
-5. Otherwise `<data dir>/vykey/vykey.db` is created. The data dir is
+2. Otherwise `<data dir>/vykey/vykey.db` (created if missing). The data dir is
    - Linux: `$XDG_DATA_HOME`, else `~/.local/share`
    - macOS: `~/Library/Application Support`
    - Windows: `%APPDATA%`
 
 The parent directory is created with mode `0700`.
+
+The Go app keeps its database at `<data dir>/kyp/kyp.db` (or `$KYP_DB_PATH`
+/ `db_path` in its YAML config). vykey does not look there; to migrate, copy
+that file to the path above.
 
 ## Key derivation
 
@@ -169,6 +169,22 @@ Deleting a vault removes its `vault_meta` row, its entries and its folders
 (cascade, plus an explicit delete). SQLite runs with `foreign_keys = ON`.
 
 An older vykey-rs refuses a database with a newer schema (`SchemaTooNew`).
+
+## Fingerprint unlock (outside the database)
+
+Opt-in per vault (`crates/vykey-biometric`). The 32-byte master key (the
+Argon2id output above, not the password) is stored raw in the user's Secret
+Service keyring, default collection:
+
+| Field      | Value |
+|------------|-------|
+| Label      | `vykey vault “<name>”` (not updated on rename) |
+| Attributes | `application` = `vykey`, `vault-id` = `vault_meta.id` |
+| Secret     | 32 bytes, content type `application/octet-stream` |
+
+A key is accepted only if it decrypts `vault_meta.verifier`; otherwise the
+item is deleted. Deleting a vault deletes its item. Nothing in the database
+records whether fingerprint unlock is on.
 
 ## Known issues
 

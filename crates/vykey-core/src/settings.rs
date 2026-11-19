@@ -2,9 +2,11 @@
 //! database: they are needed before any vault is unlocked and hold nothing
 //! secret. Default location: [`crate::paths::settings_path`].
 
+use std::env;
 use std::fs;
 use std::io;
 use std::path::Path;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
@@ -51,6 +53,59 @@ impl Settings {
     }
 }
 
+/// Environment variable with the auto-lock delay (Go duration syntax).
+pub const LOCK_TIMEOUT_ENV: &str = "VYKEY_LOCK_TIMEOUT";
+
+/// Auto-lock delay when `VYKEY_LOCK_TIMEOUT` is not set.
+pub const DEFAULT_LOCK_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+
+/// Auto-lock delay from `VYKEY_LOCK_TIMEOUT`: `None` = never lock ("0"),
+/// unset or unparsable = [`DEFAULT_LOCK_TIMEOUT`].
+pub fn lock_timeout_from_env() -> Option<Duration> {
+    match env::var(LOCK_TIMEOUT_ENV)
+        .ok()
+        .as_deref()
+        .map(parse_duration)
+    {
+        Some(Some(d)) if d.is_zero() => None,
+        Some(Some(d)) => Some(d),
+        _ => Some(DEFAULT_LOCK_TIMEOUT),
+    }
+}
+
+/// Parses Go-style durations as in `VYKEY_LOCK_TIMEOUT`: "30s", "5m", "1h30m", "0".
+pub fn parse_duration(s: &str) -> Option<Duration> {
+    let s = s.trim();
+    if s == "0" {
+        return Some(Duration::ZERO);
+    }
+    let mut total = Duration::ZERO;
+    let mut num = String::new();
+    let mut chars = s.chars().peekable();
+    let mut any = false;
+    while let Some(c) = chars.next() {
+        if c.is_ascii_digit() || c == '.' {
+            num.push(c);
+            continue;
+        }
+        let value: f64 = num.parse().ok()?;
+        num.clear();
+        let unit = match c {
+            'h' => 3600.0,
+            'm' if chars.peek() == Some(&'s') => {
+                chars.next();
+                0.001
+            }
+            'm' => 60.0,
+            's' => 1.0,
+            _ => return None,
+        };
+        total += Duration::from_secs_f64(value * unit);
+        any = true;
+    }
+    (any && num.is_empty()).then_some(total)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -92,5 +147,15 @@ mod tests {
 
         fs::write(&path, "{}").unwrap();
         assert_eq!(Settings::load(&path), Settings::default());
+    }
+
+    #[test]
+    fn durations() {
+        assert_eq!(parse_duration("30s"), Some(Duration::from_secs(30)));
+        assert_eq!(parse_duration("1h30m"), Some(Duration::from_secs(5400)));
+        assert_eq!(parse_duration("500ms"), Some(Duration::from_millis(500)));
+        assert_eq!(parse_duration("0"), Some(Duration::ZERO));
+        assert_eq!(parse_duration("abc"), None);
+        assert_eq!(parse_duration("5"), None);
     }
 }

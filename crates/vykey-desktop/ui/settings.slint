@@ -1,5 +1,6 @@
 // Settings screen: header + cards, like the security screen. Sections are
-// added here as settings grow; for now: appearance (theme, language).
+// added here as settings grow: appearance (theme, language), security
+// (fingerprint unlock).
 
 import { Theme, Icons } from "theme.slint";
 import { Icon, Card, Divider } from "components.slint";
@@ -193,6 +194,53 @@ component Dropdown inherits Rectangle {
     }
 }
 
+// On/off switch.
+component Switch inherits Rectangle {
+    in property <bool> checked;
+    in property <bool> enabled: true;
+    in property <string> label;
+    callback toggled(bool);
+
+    width: 40px;
+    height: 24px;
+    border-radius: self.height / 2;
+    background: root.checked ? Theme.accent : Theme.bg-hover;
+    border-width: root.checked ? 0 : 1px;
+    border-color: Theme.border-subtle;
+    opacity: root.enabled ? 1 : 0.5;
+    accessible-role: checkbox;
+    accessible-label: root.label;
+    accessible-checked: root.checked;
+    accessible-enabled: root.enabled;
+    accessible-action-default => {
+        if root.enabled {
+            root.toggled(!root.checked);
+        }
+    }
+
+    animate background { duration: 150ms; }
+
+    Rectangle {
+        width: 18px;
+        height: 18px;
+        y: (parent.height - self.height) / 2;
+        x: root.checked ? parent.width - self.width - 3px : 3px;
+        border-radius: self.height / 2;
+        background: #FFFFFF;
+        drop-shadow-color: #0000003A;
+        drop-shadow-blur: 3px;
+        drop-shadow-offset-y: 1px;
+
+        animate x { duration: 150ms; easing: ease-out; }
+    }
+
+    TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: self.enabled ? pointer : default;
+        clicked => { root.toggled(!root.checked); }
+    }
+}
+
 // A row inside a settings card: title + hint on the left, control on the right.
 component SettingRow inherits HorizontalLayout {
     in property <string> title;
@@ -239,6 +287,12 @@ export component SettingsMain inherits VerticalLayout {
     in property <int> language-mode;
     in property <[string]> language-names;
     callback set-language(int);
+    // Fingerprint unlock (see app.slint): 0 = no reader, 1 = no fingers, 2 = ready.
+    in property <string> vault-name;
+    in property <int> fp-support;
+    in property <bool> fp-enabled;
+    in property <bool> fp-toggle-busy;
+    callback set-fingerprint(bool);
 
     padding-top: 24px;
     padding-bottom: 24px;
@@ -303,6 +357,31 @@ export component SettingsMain inherits VerticalLayout {
                         selected: root.language-mode;
                         picked(i) => { root.set-language(i); }
                     }
+                }
+            }
+        }
+    }
+
+    // Security
+    if root.fp-support != 0: VerticalLayout {
+        spacing: 8px;
+        max-width: 760px;
+
+        SectionTitle { text: @tr("SECURITY"); }
+
+        Card {
+            SettingRow {
+                title: @tr("Unlock with fingerprint");
+                hint: root.fp-support == 1
+                    ? @tr("Enroll a fingerprint in the system settings first")
+                    : @tr("Open “{0}” with a finger instead of the master password. Its key is kept in the system keyring", root.vault-name);
+
+                Switch {
+                    label: @tr("Unlock with fingerprint");
+                    checked: root.fp-enabled;
+                    // Turning it off always works, even without fingers.
+                    enabled: !root.fp-toggle-busy && (root.fp-support == 2 || root.fp-enabled);
+                    toggled(on) => { root.set-fingerprint(on); }
                 }
             }
         }

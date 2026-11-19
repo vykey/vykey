@@ -791,3 +791,104 @@ msgid_plural "{n} items"
 msgstr[0] "{n} запись"
 msgstr[1] "{n} записи"
 msgstr[2] "{n} записей"
+
+# ---- fingerprint unlock ----
+
+msgid "Use fingerprint"
+msgstr "Войти по отпечатку"
+
+msgid "SECURITY"
+msgstr "БЕЗОПАСНОСТЬ"
+
+msgid "Unlock with fingerprint"
+msgstr "Вход по отпечатку пальца"
+
+msgid "Enroll a fingerprint in the system settings first"
+msgstr "Сначала добавьте отпечаток в настройках системы"
+
+msgid "Open “{0}” with a finger instead of the master password. Its key is kept in the system keyring"
+msgstr "Открывать «{0}» отпечатком пальца вместо мастер-пароля. Ключ хранилища хранится в системной связке ключей"
+
+msgid "left thumb"
+msgstr "левый большой палец"
+
+msgid "left index finger"
+msgstr "левый указательный палец"
+
+msgid "left middle finger"
+msgstr "левый средний палец"
+
+msgid "left ring finger"
+msgstr "левый безымянный палец"
+
+msgid "left little finger"
+msgstr "левый мизинец"
+
+msgid "right thumb"
+msgstr "правый большой палец"
+
+msgid "right index finger"
+msgstr "правый указательный палец"
+
+msgid "right middle finger"
+msgstr "правый средний палец"
+
+msgid "right ring finger"
+msgstr "правый безымянный палец"
+
+msgid "right little finger"
+msgstr "правый мизинец"
+
+msgid "Place your {0} on the fingerprint reader"
+msgstr "Приложите {0} к сканеру отпечатков"
+
+msgid "Swipe your {0} across the fingerprint reader"
+msgstr "Проведите пальцем ({0}) по сканеру отпечатков"
+
+msgid "Place your finger on the fingerprint reader"
+msgstr "Приложите палец к сканеру отпечатков"
+
+msgid "Swipe your finger across the fingerprint reader"
+msgstr "Проведите пальцем по сканеру отпечатков"
+
+msgid "Could not read the finger — try again"
+msgstr "Не удалось считать отпечаток — попробуйте ещё раз"
+
+msgid "Swipe was too short — try again"
+msgstr "Слишком короткое движение — попробуйте ещё раз"
+
+msgid "Finger was not centered — try again"
+msgstr "Палец не по центру — попробуйте ещё раз"
+
+msgid "Remove your finger and try again"
+msgstr "Уберите палец и попробуйте ещё раз"
+
+msgid "Fingerprint not recognized, {n} attempt left"
+msgid_plural "Fingerprint not recognized, {n} attempts left"
+msgstr[0] "Отпечаток не распознан, осталась {n} попытка"
+msgstr[1] "Отпечаток не распознан, осталось {n} попытки"
+msgstr[2] "Отпечаток не распознан, осталось {n} попыток"
+
+msgid "Fingerprint not recognized"
+msgstr "Отпечаток не распознан"
+
+msgid "Fingerprint check timed out"
+msgstr "Время ожидания отпечатка истекло"
+
+msgid "The fingerprint reader is in use by another program"
+msgstr "Сканер отпечатков занят другой программой"
+
+msgid "The saved fingerprint key no longer fits this vault — enter the master password"
+msgstr "Сохранённый ключ больше не подходит к этому хранилищу — введите мастер-пароль"
+
+msgid "The system keyring was not unlocked"
+msgstr "Системная связка ключей не разблокирована"
+
+msgid "Fingerprint unlock failed: {0}"
+msgstr "Вход по отпечатку не удался: {0}"
+
+msgid "Fingerprint unlock enabled"
+msgstr "Вход по отпечатку включён"
+
+msgid "Fingerprint unlock disabled"
+msgstr "Вход по отпечатку выключен"

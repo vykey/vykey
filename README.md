@@ -1,11 +1,13 @@
 # vykey
 
-**vykey** (*Vault Your Keys*) is a native desktop password manager, written in
-Rust with [Slint](https://slint.dev). No web view, no JS.
+**vykey** (*Vault Your Keys*) is a local password manager written in Rust: a
+native desktop app ([Slint](https://slint.dev), no web view, no JS) and a
+terminal client, `vy`, working on the same encrypted vault file.
 
 Formerly kyp; successor of the Go app
-([stickpro/kyp](https://github.com/stickpro/kyp)): opens its databases and upgrades them in place — see
-[docs/vault-format.md](docs/vault-format.md).
+([stickpro/kyp](https://github.com/stickpro/kyp)): opens its databases and
+upgrades them in place — see [docs/vault-format.md](docs/vault-format.md) and
+[Migrating from kyp](#migrating-from-kyp).
 
 ## Features
 
@@ -21,12 +23,16 @@ Formerly kyp; successor of the Go app
 - Settings: light, dark or system theme; interface language (English,
   Russian; follows the system by default)
 - Auto-lock on inactivity, clipboard auto-clear after 30 s
+- Fingerprint unlock on Linux (fprintd), opt-in per vault — see below
+- Terminal client `vy`: full-screen TUI and Bitwarden CSV import
 
 ## Layout
 
 ```
 crates/vykey-core      vault format, crypto, storage, TOTP, audit (no UI)
+crates/vykey-biometric fingerprint unlock: fprintd + Secret Service (Linux)
 crates/vykey-desktop   Slint desktop app, binary `vykey` (ui/, src/, translations/)
+crates/vykey-cli       terminal client, binary `vy` (ratatui)
 docs/                  vault format spec
 testdata/              fixture databases created by the Go app
 ```
@@ -36,22 +42,104 @@ testdata/              fixture databases created by the Go app
 ```sh
 cargo run -p vykey-desktop             # debug
 cargo build -p vykey-desktop --release # → target/release/vykey
+cargo build -p vykey-cli --release     # → target/release/vy
 cargo test --workspace
 ```
 
 Linux needs `fontconfig` and `libxkbcommon` development headers.
 
+## Terminal client
+
+```sh
+vy                                  # open the TUI (same as `vy start`)
+vy --db ~/vault.db                  # another database
+vy import bitwarden.csv             # import a Bitwarden CSV export
+vy import bitwarden.csv --vault Work --folder Work
+vy fingerprint enable --vault Work  # fingerprint unlock (see below)
+vy fingerprint status
+```
+
+`vy import` asks for the master password (it is never a command-line
+argument), imports logins and secure notes, and turns Bitwarden folders into
+vykey folders.
+
+| Screen  | Keys |
+|---------|------|
+| vaults  | `↑`/`↓` pick a vault, `enter` unlock, `n` new vault, `q` quit; `esc` on the password prompt returns here; `ctrl+f` retries the fingerprint |
+| list    | `↑`/`↓` (`j`/`k`) move, `enter` open, `/` filter, `n` new entry, `v` switch vault, `q` quit |
+| details | `u` copy username, `c` copy password (card: number), `t` copy TOTP, `v` copy CVV, `p`/`space` show/hide, `f` favourite, `e` edit, `d` delete, `esc` back |
+| form    | `tab`/`shift+tab` next/previous field, `←`/`→` entry type (new entries), `ctrl+g` generate password, `ctrl+p` show/hide, `ctrl+s` save, `esc` back |
+| any     | `ctrl+l` lock, `ctrl+c` quit |
+
+The terminal client is English only.
+
+## Fingerprint unlock (Linux)
+
+With a reader supported by [fprintd](https://fprint.freedesktop.org/) and an
+enrolled finger (`fprintd-enroll`), a vault can be opened like `sudo` with
+`pam_fprintd`: the unlock screen shows "Place your right index finger on the
+fingerprint reader" while the password field keeps working. Three attempts,
+30 s timeout; then "Use fingerprint" (desktop) or `ctrl+f` (TUI) retries.
+
+Turn it on per vault in the desktop app (Settings → Security) or with
+`vy fingerprint enable`. It needs the master password once: the vault key
+derived from it is stored in the system keyring (Secret Service: GNOME
+Keyring, KWallet, KeePassXC) as "vykey vault “name”". After a matching
+finger vykey reads the key back and opens the vault without Argon2. The
+master password itself is never stored.
+
+What this protects against, and what not:
+
+- The fingerprint only gates vykey's own UI. The keyring hands the key to
+  any program of your user while the keyring is unlocked (normally the whole
+  login session), so malware in your session can read the vault without a
+  finger. Unlike Touch ID or Windows Hello there is no hardware binding.
+- The key alone is not enough: it decrypts the database file, which must be
+  stolen as well.
+- Deleting a vault removes its key. A key that no longer opens the vault
+  (database replaced, vault re-created) is detected and removed; the next
+  unlock asks for the password.
+- The reader is claimed while vykey waits, so `sudo` in another terminal
+  falls back to its password prompt until the check ends.
+
 ## Configuration
 
 | Variable             | Default                          |
 |----------------------|----------------------------------|
-| `VYKEY_DB_PATH`      | `$XDG_DATA_HOME/vykey/vykey.db` (or `~/.local/share/vykey/vykey.db`); the legacy `KYP_DB_PATH` and an existing `kyp/kyp.db` are still picked up |
+| `VYKEY_DB_PATH`      | `$XDG_DATA_HOME/vykey/vykey.db` (or `~/.local/share/vykey/vykey.db`; macOS: `~/Library/Application Support/vykey/vykey.db`; Windows: `%APPDATA%\vykey\vykey.db`) |
 | `VYKEY_LOCK_TIMEOUT` | `5m`; Go duration syntax, `0` disables |
 | `SLINT_BACKEND`      | software renderer (~30 MB RSS); `winit-femtovg` renders with OpenGL (smoother on very large windows, but loads GPU drivers: ~270 MB) |
 
 Preferences chosen in the app (theme) are stored in
 `$XDG_CONFIG_HOME/vykey/settings.json` (`~/.config/vykey/settings.json`; on
 macOS and Windows in the same directory as the database).
+
+## Migrating from kyp
+
+The Go app stored its vault in `kyp/kyp.db`; vykey uses `vykey/vykey.db`.
+Copy the file to the new location (close the Go app first):
+
+```sh
+# Linux
+mkdir -p ~/.local/share/vykey
+cp ~/.local/share/kyp/kyp.db ~/.local/share/vykey/vykey.db
+
+# macOS
+mkdir -p ~/Library/Application\ Support/vykey
+cp ~/Library/Application\ Support/kyp/kyp.db ~/Library/Application\ Support/vykey/vykey.db
+```
+
+```powershell
+# Windows
+New-Item -ItemType Directory -Force "$env:APPDATA\vykey"
+Copy-Item "$env:APPDATA\kyp\kyp.db" "$env:APPDATA\vykey\vykey.db"
+```
+
+If you used `KYP_DB_PATH` or `db_path` in the Go app's config, copy that file
+instead. vykey upgrades the copy on first unlock, and the Go app must not be
+used on an upgraded database (it would show encrypted titles as empty), so
+keep the original as a backup until you no longer need kyp. Pointing
+`VYKEY_DB_PATH` at the Go app's file also works, but upgrades it in place.
 
 ## Translations
 

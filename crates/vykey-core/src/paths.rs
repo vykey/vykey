@@ -1,9 +1,6 @@
-//! Default database location.
-//!
-//! vykey was called kyp before, and the Go implementation still uses that
-//! name: `pkg/storage/path.go` reads `$KYP_DB_PATH`, else
-//! `<data dir>/kyp/kyp.db`. Both legacy locations are still honoured so
-//! existing vaults keep opening after the rename.
+//! Default database location: `$VYKEY_DB_PATH`, else
+//! `<data dir>/vykey/vykey.db`. Databases of the Go app (`kyp/kyp.db`) are
+//! not picked up automatically: copy the file to the new path (see README).
 
 use std::env;
 use std::path::PathBuf;
@@ -11,28 +8,12 @@ use std::path::PathBuf;
 /// Environment variable overriding the database path.
 pub const DB_PATH_ENV: &str = "VYKEY_DB_PATH";
 
-/// Pre-rename name of [`DB_PATH_ENV`], also read by the Go implementation.
-pub const LEGACY_DB_PATH_ENV: &str = "KYP_DB_PATH";
-
-/// Resolves the database path, first match wins:
-/// 1. `$VYKEY_DB_PATH`;
-/// 2. `$KYP_DB_PATH` (legacy);
-/// 3. `<data dir>/vykey/vykey.db`, if it exists;
-/// 4. `<data dir>/kyp/kyp.db`, if it exists (legacy / Go app);
-/// 5. `<data dir>/vykey/vykey.db` (created on open).
+/// `$VYKEY_DB_PATH`, otherwise `<data dir>/vykey/vykey.db`.
 pub fn default_db_path() -> Option<PathBuf> {
-    for var in [DB_PATH_ENV, LEGACY_DB_PATH_ENV] {
-        if let Some(p) = env::var_os(var).filter(|p| !p.is_empty()) {
-            return Some(PathBuf::from(p));
-        }
+    if let Some(p) = env::var_os(DB_PATH_ENV).filter(|p| !p.is_empty()) {
+        return Some(PathBuf::from(p));
     }
-    let data = user_data_dir()?;
-    let path = data.join("vykey").join("vykey.db");
-    let legacy = data.join("kyp").join("kyp.db");
-    if !path.exists() && legacy.exists() {
-        return Some(legacy);
-    }
-    Some(path)
+    Some(user_data_dir()?.join("vykey").join("vykey.db"))
 }
 
 /// `<config dir>/vykey/settings.json` (see [`crate::settings`]).

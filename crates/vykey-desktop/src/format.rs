@@ -1,8 +1,6 @@
 //! Display helpers: avatars, domains, date parts, score ring, input masks.
 //! Language-dependent wording is composed in `text.rs` from `Tr` strings.
 
-use std::time::Duration;
-
 use chrono::{DateTime, Datelike, Local, TimeZone};
 use slint::Color;
 
@@ -158,39 +156,6 @@ pub fn score_level(score: u32) -> i32 {
     }
 }
 
-/// Parses Go-style durations used by `VYKEY_LOCK_TIMEOUT`: "30s", "5m", "1h30m", "0".
-pub fn parse_duration(s: &str) -> Option<Duration> {
-    let s = s.trim();
-    if s == "0" {
-        return Some(Duration::ZERO);
-    }
-    let mut total = Duration::ZERO;
-    let mut num = String::new();
-    let mut chars = s.chars().peekable();
-    let mut any = false;
-    while let Some(c) = chars.next() {
-        if c.is_ascii_digit() || c == '.' {
-            num.push(c);
-            continue;
-        }
-        let value: f64 = num.parse().ok()?;
-        num.clear();
-        let unit = match c {
-            'h' => 3600.0,
-            'm' if chars.peek() == Some(&'s') => {
-                chars.next();
-                0.001
-            }
-            'm' => 60.0,
-            's' => 1.0,
-            _ => return None,
-        };
-        total += Duration::from_secs_f64(value * unit);
-        any = true;
-    }
-    (any && num.is_empty()).then_some(total)
-}
-
 /// Input masks for card fields, applied while typing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mask {
@@ -315,16 +280,6 @@ mod tests {
         assert_eq!(ago(0, 3 * 86_400), Ago::Days(3));
         assert_eq!(ago(0, 40 * 86_400), Ago::Older);
         assert_eq!(ago(100, 0), Ago::JustNow);
-    }
-
-    #[test]
-    fn durations() {
-        assert_eq!(parse_duration("30s"), Some(Duration::from_secs(30)));
-        assert_eq!(parse_duration("1h30m"), Some(Duration::from_secs(5400)));
-        assert_eq!(parse_duration("500ms"), Some(Duration::from_millis(500)));
-        assert_eq!(parse_duration("0"), Some(Duration::ZERO));
-        assert_eq!(parse_duration("abc"), None);
-        assert_eq!(parse_duration("5"), None);
     }
 
     #[test]
