@@ -1,8 +1,8 @@
-// Vault and folder dialogs: create / rename / delete, built from the same
+// Vault and folder dialogs: create / rename / change password / delete, built from the same
 // Modal, fields and buttons as the entry dialogs.
 
 import { Theme, Icons } from "theme.slint";
-import { Field, FieldLabel, PrimaryButton, SecondaryButton, SquareButton, Icon, FolderPalette } from "components.slint";
+import { Field, FieldLabel, PrimaryButton, SecondaryButton, SquareButton, Icon, FolderPalette, StrengthMeter, Backend } from "components.slint";
 import { Modal } from "entry-form.slint";
 
 component DialogHeader inherits HorizontalLayout {
@@ -88,6 +88,122 @@ export component RenameVaultModal inherits Modal {
         PrimaryButton {
             text: @tr("Save");
             pad-x: 18px;
+            pad-y: 10px;
+            clicked => { root.submit(); }
+        }
+    }
+}
+
+// Current password, then the new one twice (same rules as a new vault).
+// Only the wrapped vault key changes; see Store::change_password.
+export component ChangePasswordModal inherits Modal {
+    in property <bool> busy;
+    in-out property <string> error;
+    callback confirm(string /* current */, string /* new */);
+    callback cancel();
+
+    card-width: 440px;
+
+    function submit() {
+        if root.busy {
+            return;
+        }
+        if current.text == "" {
+            root.error = @tr("Enter the current master password");
+            current.focus();
+        } else if new.text.character-count < 8 {
+            root.error = @tr("The master password must be at least 8 characters long");
+            new.focus();
+        } else if new.text != repeat.text {
+            root.error = @tr("Passwords do not match");
+            repeat.focus();
+        } else if new.text == current.text {
+            root.error = @tr("The new password is the same as the current one");
+            new.focus();
+        } else {
+            root.error = "";
+            root.confirm(current.text, new.text);
+        }
+    }
+
+    init => { current.focus(); }
+
+    DialogHeader {
+        title: @tr("Change master password");
+        close => { root.cancel(); }
+    }
+
+    Text {
+        text: @tr("Use the new password from now on. Fingerprint unlock keeps working; an old copy of the database still opens with the old password.");
+        wrap: word-wrap;
+        font-size: 13px;
+        color: Theme.text-secondary;
+    }
+
+    VerticalLayout {
+        spacing: 6px;
+        FieldLabel { text: @tr("Current master password"); }
+        current := Field {
+            password: true;
+            mono: true;
+            revealable: true;
+            label: @tr("Current master password");
+            placeholder: @tr("Master password");
+            edited => { root.error = ""; }
+            accepted => { new.focus(); }
+        }
+    }
+
+    VerticalLayout {
+        spacing: 6px;
+        FieldLabel { text: @tr("New master password"); }
+        new := Field {
+            password: true;
+            mono: true;
+            revealable: true;
+            label: @tr("New master password");
+            placeholder: @tr("At least 8 characters");
+            edited => { root.error = ""; }
+            accepted => { repeat.focus(); }
+        }
+        StrengthMeter {
+            bars: Backend.password-strength(new.text);
+        }
+    }
+
+    VerticalLayout {
+        spacing: 6px;
+        FieldLabel { text: @tr("Repeat password"); }
+        repeat := Field {
+            password: true;
+            mono: true;
+            label: @tr("Repeat master password");
+            placeholder: @tr("Master password again");
+            invalid: repeat.text != "" && repeat.text != new.text;
+            edited => { root.error = ""; }
+            accepted => { root.submit(); }
+        }
+    }
+
+    if root.error != "": Text {
+        text: root.error;
+        color: Theme.danger;
+        font-size: 12px;
+        wrap: word-wrap;
+    }
+
+    HorizontalLayout {
+        alignment: end;
+        spacing: 10px;
+        padding-top: 2px;
+
+        SecondaryButton {
+            text: @tr("Cancel");
+            clicked => { root.cancel(); }
+        }
+        PrimaryButton {
+            text: root.busy ? @tr("Changing…") : @tr("Change password");
+            enabled: !root.busy;
             pad-y: 10px;
             clicked => { root.submit(); }
         }

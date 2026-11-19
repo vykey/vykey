@@ -19,7 +19,8 @@ component UnlockForm inherits VerticalLayout {
     in-out property <int> vault-index;
     in property <bool> busy;
     in-out property <string> error;
-    // Fingerprint: 0 = off, 1 = waiting for a finger, 2 = stopped (offer a retry).
+    // Fingerprint: 0 = off, 1 = waiting for a finger, 2 = stopped (offer a
+    // retry), 3 = note only (the password has to be entered first).
     in property <int> fp-state;
     in property <string> fp-message;
     callback submit(string, string);

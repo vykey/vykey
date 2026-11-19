@@ -46,6 +46,30 @@ pub fn derive_key(password: &[u8], salt: &[u8]) -> Result<Key, CryptoError> {
     Ok(key)
 }
 
+/// Random data key of a new vault (schema v5).
+pub fn generate_key() -> Key {
+    let mut key = Zeroizing::new([0u8; KEY_LEN]);
+    rand::fill(key.as_mut());
+    key
+}
+
+/// Encrypts the data key under the key derived from the password.
+pub fn wrap_key(key: &Key, kek: &Key) -> Result<Vec<u8>, CryptoError> {
+    encrypt(key.as_slice(), kek)
+}
+
+/// Inverse of [`wrap_key`]; fails with a wrong `kek` (wrong password).
+pub fn unwrap_key(wrapped: &[u8], kek: &Key) -> Result<Key, CryptoError> {
+    let plain = decrypt(wrapped, kek)?;
+    if plain.len() != KEY_LEN {
+        return Err(CryptoError::Decrypt);
+    }
+    // Copied straight into zeroized storage, no stray stack copy.
+    let mut key = Zeroizing::new([0u8; KEY_LEN]);
+    key.copy_from_slice(&plain);
+    Ok(key)
+}
+
 pub fn generate_salt() -> [u8; SALT_LEN] {
     let mut salt = [0u8; SALT_LEN];
     rand::fill(&mut salt);
@@ -107,6 +131,16 @@ mod tests {
         let v = new_verifier(&good).unwrap();
         assert!(check_verifier(&v, &good));
         assert!(!check_verifier(&v, &bad));
+    }
+
+    #[test]
+    fn key_wrapping() {
+        let key = generate_key();
+        let kek = derive_key(b"pw", &generate_salt()).unwrap();
+        let other = derive_key(b"other", &generate_salt()).unwrap();
+        let wrapped = wrap_key(&key, &kek).unwrap();
+        assert_eq!(*unwrap_key(&wrapped, &kek).unwrap(), *key);
+        assert!(unwrap_key(&wrapped, &other).is_err());
     }
 
     #[test]

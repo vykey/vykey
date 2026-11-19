@@ -32,6 +32,10 @@ pub struct Settings {
     /// Auto-lock after this many seconds without activity; 0 = never.
     /// `VYKEY_LOCK_TIMEOUT` overrides it (see [`Settings::lock_timeout`]).
     pub lock_timeout: u64,
+    /// Ids of vaults with fingerprint unlock on. Their keys live in the OS
+    /// for a limited time (see `vykey_biometric`); this only says to keep
+    /// them after each password unlock.
+    pub fingerprint_vaults: Vec<String>,
 }
 
 impl Default for Settings {
@@ -40,11 +44,23 @@ impl Default for Settings {
             theme: ThemeMode::default(),
             language: None,
             lock_timeout: DEFAULT_LOCK_TIMEOUT.as_secs(),
+            fingerprint_vaults: Vec::new(),
         }
     }
 }
 
 impl Settings {
+    pub fn fingerprint(&self, vault_id: &str) -> bool {
+        self.fingerprint_vaults.iter().any(|id| id == vault_id)
+    }
+
+    pub fn set_fingerprint(&mut self, vault_id: &str, on: bool) {
+        self.fingerprint_vaults.retain(|id| id != vault_id);
+        if on {
+            self.fingerprint_vaults.push(vault_id.to_owned());
+        }
+    }
+
     /// Effective auto-lock delay: `VYKEY_LOCK_TIMEOUT` if set and valid,
     /// else the saved one. `None` = never lock.
     pub fn lock_timeout(&self) -> Option<Duration> {
@@ -135,9 +151,11 @@ mod tests {
             theme: ThemeMode::Dark,
             language: Some("ru".into()),
             lock_timeout: 900,
+            fingerprint_vaults: vec!["v1".into()],
         };
         s.save(&path).unwrap();
         assert_eq!(Settings::load(&path), s);
+        assert!(s.fingerprint("v1") && !s.fingerprint("v2"));
         assert!(
             fs::read_to_string(&path)
                 .unwrap()

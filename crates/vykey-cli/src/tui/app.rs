@@ -369,6 +369,8 @@ enum FpOutcome {
     Reset,
     NoMatch,
     TimedOut,
+    /// No stored key: expired, or not stored since the last restart.
+    Expired,
     Failed(biometric::Error),
 }
 
@@ -390,8 +392,10 @@ impl Drop for FpCheck {
 /// Fingerprint prompt under the password field.
 pub struct FpLine {
     pub text: String,
-    /// Waiting for a finger; otherwise the check is over (ctrl+f retries).
+    /// Waiting for a finger; otherwise the check is over.
     pub waiting: bool,
+    /// ctrl+f starts another check.
+    pub retry: bool,
 }
 
 fn fp_text(event: FpEvent) -> String {
@@ -424,8 +428,8 @@ fn fp_text(event: FpEvent) -> String {
 }
 
 /// Claims the reader and waits for a finger, then opens the vault with the
-/// key from the keyring. Ends silently if the vault has no fingerprint
-/// unlock.
+/// key from the kernel keyring. Without a stored key it only reports that
+/// the password is needed. Call only for vaults with fingerprint unlock on.
 fn spawn_fingerprint(meta: VaultMeta) -> FpCheck {
     let cancel = biometric::Cancel::new();
     let (tx, rx) = mpsc::channel();
@@ -435,8 +439,8 @@ fn spawn_fingerprint(meta: VaultMeta) -> FpCheck {
         rx,
     };
     std::thread::spawn(move || {
-        // A search only: never shows a keyring prompt.
-        if !biometric::is_enabled(&meta.id).unwrap_or(false) || cancel.is_cancelled() {
+        if !biometric::has_key(&meta.id) {
+            let _ = tx.send(FpMsg::Done(FpOutcome::Expired));
             return;
         }
         let _ = tx.send(FpMsg::Event(FpEvent::Prompt {
@@ -482,6 +486,8 @@ pub struct App {
     clipboard: Clipboard,
     last_activity: Instant,
     lock_timeout: Option<Duration>,
+    /// Vaults with fingerprint unlock on (from settings.json).
+    fp_vaults: Vec<String>,
     /// Fingerprint reader; `None` while probing or with fingerprint off.
     fp_support: Option<Availability>,
     fp_probe: Option<mpsc::Receiver<Availability>>,
@@ -515,6 +521,10 @@ impl App {
             });
             rx
         });
+        // Same settings.json as the desktop app.
+        let settings = vykey_core::paths::settings_path()
+            .map(|p| vykey_core::settings::Settings::load(&p))
+            .unwrap_or_default();
         let mut app = Self {
             store,
             vaults: Vec::new(),
@@ -529,10 +539,12 @@ impl App {
             clipboard: Clipboard::default(),
             last_activity: Instant::now(),
             // Same settings.json as the desktop app.
-            lock_timeout: vykey_core::paths::settings_path()
-                .map(|p| vykey_core::settings::Settings::load(&p))
-                .unwrap_or_default()
-                .lock_timeout(),
+            lock_timeout: settings.lock_timeout(),
+            fp_vaults: if fingerprint {
+                settings.fingerprint_vaults
+            } else {
+                Vec::new()
+            },
             fp_support: None,
             fp_probe,
             fp_check: None,
@@ -595,6 +607,14 @@ impl App {
                     .store
                     .vault_meta(&name)
                     .and_then(|meta| Vault::unlock(meta, &password));
+                // The password restarts the fingerprint key's lifetime; a
+                // finger never does.
+                if let Ok(vault) = &result
+                    && self.fp_vaults.contains(&vault.meta().id)
+                    && let Err(e) = biometric::store_key(&vault.meta().id, vault.key())
+                {
+                    self.notify(format!("Fingerprint unlock: {e}"), true);
+                }
                 self.finish_open(result);
             }
             Pending::Create { name, password } => {
@@ -744,7 +764,10 @@ impl App {
             return None;
         }
         match &self.screen {
-            Screen::Unlock(s) if s.entering => self.vaults.get(s.selected),
+            Screen::Unlock(s) if s.entering => self
+                .vaults
+                .get(s.selected)
+                .filter(|m| self.fp_vaults.contains(&m.id)),
             _ => None,
         }
     }
@@ -782,6 +805,7 @@ impl App {
                     self.fp_line = Some(FpLine {
                         text: fp_text(e),
                         waiting: true,
+                        retry: false,
                     })
                 }
                 FpMsg::Done(outcome) => self.finish_fingerprint(outcome),
@@ -808,6 +832,14 @@ impl App {
                 }
                 return;
             }
+            FpOutcome::Expired => {
+                self.fp_line = Some(FpLine {
+                    text: "Fingerprint unlock resumes once you enter the master password".into(),
+                    waiting: false,
+                    retry: false,
+                });
+                return;
+            }
             FpOutcome::NoMatch => "Fingerprint not recognized".to_owned(),
             FpOutcome::TimedOut => "Fingerprint check timed out".to_owned(),
             FpOutcome::Failed(e) => {
@@ -821,6 +853,7 @@ impl App {
         self.fp_line = Some(FpLine {
             text,
             waiting: false,
+            retry: true,
         });
     }
 
@@ -940,7 +973,7 @@ impl App {
         match key.code {
             // Try the fingerprint again (sync_fingerprint starts a new check).
             KeyCode::Char('f') if ctrl => {
-                if self.fp_line.as_ref().is_some_and(|l| !l.waiting) {
+                if self.fp_line.as_ref().is_some_and(|l| l.retry) {
                     self.fp_check = None;
                     self.fp_line = None;
                 }

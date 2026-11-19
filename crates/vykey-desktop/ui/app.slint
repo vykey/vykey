@@ -10,7 +10,7 @@ import { Tr } from "i18n.slint";
 import { VaultMain, EntryItem, EntryDetail, DeleteFx } from "vault.slint";
 import { EntryFormModal, ConfirmDeleteModal, EntryForm } from "entry-form.slint";
 import { SecurityMain, SecurityStats, Issue } from "security.slint";
-import { RenameVaultModal, DeleteVaultModal, FolderModal, DeleteFolderModal } from "vault-dialogs.slint";
+import { RenameVaultModal, ChangePasswordModal, DeleteVaultModal, FolderModal, DeleteFolderModal } from "vault-dialogs.slint";
 
 export { Tr, Backend, DeleteFx, MaskResult, Theme, VaultItem, EntryItem, EntryDetail, EntryForm, SecurityStats, Issue, Page, FolderItem, FolderPalette }
 
@@ -84,7 +84,6 @@ export component AppWindow inherits Window {
     // hidden), 1 = reader without enrolled fingers, 2 = ready.
     in property <int> fp-support;
     in property <bool> fp-enabled;
-    in property <bool> fp-toggle-busy;
     callback set-fingerprint(bool);
     callback select-filter(int);
     callback select-folder(string);
@@ -109,7 +108,7 @@ export component AppWindow inherits Window {
     callback confirm-delete();
 
     // ---- vault management ----
-    // 0 = none, 1 = rename, 2 = delete
+    // 0 = none, 1 = rename, 2 = delete, 3 = change master password
     in-out property <int> vault-dialog;
     in-out property <string> vault-dialog-error;
     in property <bool> vault-dialog-busy;
@@ -117,6 +116,7 @@ export component AppWindow inherits Window {
     callback vault-action(int);
     callback rename-vault(string);
     callback delete-vault(string);
+    callback change-password(string /* current */, string /* new */);
 
     // ---- folders ----
     // 0 = none, 1 = create / edit, 2 = delete
@@ -258,10 +258,10 @@ export component AppWindow inherits Window {
                 lock-index: root.lock-index;
                 lock-env: root.lock-env;
                 set-lock-timeout(i) => { root.set-lock-timeout(i); }
+                change-password => { root.vault-action(3); }
                 vault-name: root.vault-name;
                 fp-support: root.fp-support;
                 fp-enabled: root.fp-enabled;
-                fp-toggle-busy: root.fp-toggle-busy;
                 set-fingerprint(on) => { root.set-fingerprint(on); }
             }
         }
@@ -284,6 +284,13 @@ export component AppWindow inherits Window {
             current-name: root.vault-name;
             error <=> root.vault-dialog-error;
             save(name) => { root.rename-vault(name); }
+            cancel => { root.vault-dialog = 0; }
+        }
+
+        if root.vault-dialog == 3: ChangePasswordModal {
+            busy: root.vault-dialog-busy;
+            error <=> root.vault-dialog-error;
+            confirm(current, new) => { root.change-password(current, new); }
             cancel => { root.vault-dialog = 0; }
         }
 

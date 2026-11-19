@@ -298,8 +298,9 @@ impl App {
         std::thread::spawn(move || {
             let result = Vault::unlock(meta, password.as_str());
             drop(password);
-            let _ =
-                slint::invoke_from_event_loop(move || with_app(|app| app.finish_unlock(result)));
+            let _ = slint::invoke_from_event_loop(move || {
+                with_app(|app| app.finish_unlock(result, true))
+            });
         });
     }
 
@@ -324,14 +325,16 @@ impl App {
                             .insert_vault(&vault)?;
                         Ok(vault)
                     });
-                    app.finish_unlock(result);
+                    app.finish_unlock(result, true);
                     app.load_vaults();
                 })
             });
         });
     }
 
-    fn finish_unlock(&mut self, result: vykey_core::Result<Vault>) {
+    /// `by_password`: opened with the master password (not a finger), which
+    /// renews the stored fingerprint key.
+    fn finish_unlock(&mut self, result: vykey_core::Result<Vault>, by_password: bool) {
         let ui = self.ui();
         ui.set_busy(false);
         // Password and fingerprint may both succeed: the first one wins.
@@ -348,6 +351,15 @@ impl App {
                 {
                     ui.set_unlock_error(self.error_text(&e).into());
                     return;
+                }
+                // The password restarts the fingerprint key's lifetime; a
+                // finger never does, so the password is asked at least daily.
+                if by_password
+                    && self.settings.fingerprint(&vault.meta().id)
+                    && let Err(e) = biometric::store_key(&vault.meta().id, vault.key())
+                {
+                    let text = self.fp_error_text(&e);
+                    self.toast(&text);
                 }
                 ui.set_create_mode(false);
                 ui.set_vault_name(vault.meta().name.as_str().into());
@@ -452,13 +464,13 @@ impl App {
         let tr = ui.global::<Tr>();
         match e {
             biometric::Error::Busy => tr.invoke_fp_busy(),
-            biometric::Error::Dismissed => tr.invoke_fp_keyring_dismissed(),
             e => tr.invoke_fp_error(e.to_string().into()),
         }
         .into()
     }
 
-    /// `state`: 0 = hidden, 1 = waiting for a finger, 2 = stopped (retry link).
+    /// `state`: 0 = hidden, 1 = waiting for a finger, 2 = stopped (retry
+    /// link), 3 = note only (no key: the password is needed first).
     fn fp_show(&self, state: i32, text: &str) {
         let ui = self.ui();
         ui.set_fp_state(state);
@@ -474,9 +486,9 @@ impl App {
         self.fp_show(0, "");
     }
 
-    /// On the unlock screen: if the selected vault has fingerprint unlock,
-    /// waits for a finger in the background, like sudo with pam_fprintd.
-    /// The password field keeps working meanwhile.
+    /// On the unlock screen: if the selected vault has fingerprint unlock and
+    /// its key is still stored, waits for a finger in the background, like
+    /// sudo with pam_fprintd. The password field keeps working meanwhile.
     fn start_fingerprint(&mut self) {
         let ui = self.ui();
         let meta = if self.fp_support != Availability::Ready
@@ -498,17 +510,18 @@ impl App {
             return;
         }
         self.stop_fingerprint();
-        let Some(meta) = meta else {
+        let Some(meta) = meta.filter(|m| self.settings.fingerprint(&m.id)) else {
             return;
         };
+        // Expired or never stored since the last restart.
+        if !biometric::has_key(&meta.id) {
+            self.fp_show(3, &self.say(|tr| tr.invoke_fp_expired()));
+            return;
+        }
         let cancel = FpCancel::new();
         self.fp_cancel = Some((cancel.clone(), meta.id.clone()));
         let round = self.fp_round;
         std::thread::spawn(move || {
-            // A search only: never shows a keyring prompt.
-            if !biometric::is_enabled(&meta.id).unwrap_or(false) || cancel.is_cancelled() {
-                return;
-            }
             post_fp(round, |app| {
                 let text = app.fp_text(FpEvent::Prompt {
                     finger: None,
@@ -541,7 +554,7 @@ impl App {
         self.fp_cancel = None;
         let text = match outcome {
             FpOutcome::Opened(vault) => {
-                self.finish_unlock(Ok(vault));
+                self.finish_unlock(Ok(vault), false);
                 return;
             }
             FpOutcome::Reset => {
@@ -557,73 +570,47 @@ impl App {
         self.fp_show(2, &text);
     }
 
-    /// Updates the settings switch for the open vault (keyring search off
-    /// the UI thread).
+    /// Updates the settings switch for the open vault.
     fn refresh_fp_enabled(&self) {
-        let ui = self.ui();
-        ui.set_fp_enabled(false);
-        let Some(id) = self.vault.as_ref().map(|v| v.meta().id.clone()) else {
-            return;
-        };
-        if matches!(
-            self.fp_support,
-            Availability::Unsupported | Availability::NoReader
-        ) {
-            return;
-        }
-        std::thread::spawn(move || {
-            let on = biometric::is_enabled(&id).unwrap_or(false);
-            let _ = slint::invoke_from_event_loop(move || {
-                with_app(|app| {
-                    if app.vault.as_ref().is_some_and(|v| v.meta().id == id) {
-                        app.ui().set_fp_enabled(on);
-                    }
-                })
-            });
-        });
+        let on = self
+            .vault
+            .as_ref()
+            .is_some_and(|v| self.settings.fingerprint(&v.meta().id));
+        self.ui().set_fp_enabled(on);
     }
 
-    /// Settings switch: stores the open vault's key in the keyring, or
-    /// removes it. May show the keyring's unlock prompt, so off the UI thread.
+    /// Settings switch. On: stores the open vault's key right away (the
+    /// vault is open, so this counts as a password unlock). Off: removes it.
     fn set_fingerprint(&mut self, on: bool) {
         let Some(vault) = &self.vault else {
             return;
         };
-        let meta = vault.meta().clone();
-        let key = on.then(|| vault.key().clone());
-        self.ui().set_fp_toggle_busy(true);
-        std::thread::spawn(move || {
-            let result = match &key {
-                Some(key) => biometric::enable(&meta, key),
-                None => biometric::disable(&meta.id),
-            };
-            drop(key);
-            let _ = slint::invoke_from_event_loop(move || {
-                with_app(|app| {
-                    let ui = app.ui();
-                    ui.set_fp_toggle_busy(false);
-                    match result {
-                        Ok(()) => {
-                            if app.vault.as_ref().is_some_and(|v| v.meta().id == meta.id) {
-                                ui.set_fp_enabled(on);
-                            }
-                            let text = app.say(|tr| {
-                                if on {
-                                    tr.invoke_fp_on()
-                                } else {
-                                    tr.invoke_fp_off()
-                                }
-                            });
-                            app.toast(&text);
-                        }
-                        Err(e) => {
-                            let text = app.fp_error_text(&e);
-                            app.toast(&text);
-                        }
+        let id = vault.meta().id.clone();
+        let result = if on {
+            biometric::store_key(&id, vault.key())
+        } else {
+            biometric::remove_key(&id)
+        };
+        match result {
+            Ok(()) => {
+                self.settings.set_fingerprint(&id, on);
+                self.save_settings();
+                self.ui().set_fp_enabled(on);
+                let text = self.say(|tr| {
+                    if on {
+                        tr.invoke_fp_on()
+                    } else {
+                        tr.invoke_fp_off()
                     }
-                })
-            });
-        });
+                });
+                self.toast(&text);
+            }
+            Err(e) => {
+                self.refresh_fp_enabled();
+                let text = self.fp_error_text(&e);
+                self.toast(&text);
+            }
+        }
     }
 
     // ---------- entries ----------
@@ -1187,6 +1174,11 @@ impl App {
                 ui.set_vault_dialog(1);
             }
             3 => {
+                ui.set_vault_dialog_error("".into());
+                ui.set_vault_dialog_busy(false);
+                ui.set_vault_dialog(3);
+            }
+            4 => {
                 let count = match (&self.store, &self.vault) {
                     (Some(store), Some(vault)) => store.entry_count(&vault.meta().id).unwrap_or(0),
                     _ => 0,
@@ -1212,6 +1204,40 @@ impl App {
                 ui.set_vault_dialog(0);
                 self.load_vaults();
                 self.toast(&self.say(|tr| tr.invoke_vault_renamed()));
+            }
+            Err(e) => ui.set_vault_dialog_error(self.error_text(&e).into()),
+        }
+    }
+
+    /// Checks the current password and wraps the vault key under the new
+    /// one (two Argon2 runs on a worker thread), then saves it.
+    fn start_change_password(&mut self, current: SharedString, new: SharedString) {
+        let Some(change) = self.vault.as_ref().map(Vault::password_change) else {
+            return;
+        };
+        let ui = self.ui();
+        ui.set_vault_dialog_busy(true);
+        ui.set_vault_dialog_error("".into());
+        std::thread::spawn(move || {
+            let result = change.prepare(current.as_str(), new.as_str());
+            drop((current, new));
+            let _ = slint::invoke_from_event_loop(move || {
+                with_app(|app| app.finish_change_password(result))
+            });
+        });
+    }
+
+    fn finish_change_password(&mut self, result: vykey_core::Result<vykey_core::KeyWrap>) {
+        let ui = self.ui();
+        ui.set_vault_dialog_busy(false);
+        // Locked meanwhile: nothing to save to.
+        let (Some(store), Some(vault)) = (&self.store, self.vault.as_mut()) else {
+            return;
+        };
+        match result.and_then(|wrap| store.change_password(vault, wrap)) {
+            Ok(()) => {
+                ui.set_vault_dialog(0);
+                self.toast(&self.say(|tr| tr.invoke_password_changed()));
             }
             Err(e) => ui.set_vault_dialog_error(self.error_text(&e).into()),
         }
@@ -1261,9 +1287,11 @@ impl App {
             return;
         }
         // Its key in the keyring opens nothing any more.
-        std::thread::spawn(move || {
-            let _ = biometric::disable(&id);
-        });
+        let _ = biometric::remove_key(&id);
+        if self.settings.fingerprint(&id) {
+            self.settings.set_fingerprint(&id, false);
+            self.save_settings();
+        }
         self.lock();
         ui.set_vault_index(0);
         self.load_vaults();
@@ -1830,6 +1858,12 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
         with_app(|app| {
             app.touch();
             app.rename_vault(&name);
+        })
+    });
+    ui.on_change_password(|current, new| {
+        with_app(|app| {
+            app.touch();
+            app.start_change_password(current, new);
         })
     });
     ui.on_delete_vault(|password| {

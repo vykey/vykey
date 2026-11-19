@@ -1,10 +1,12 @@
 //! `vy` — terminal client of vykey: a full-screen TUI over the same vault
 //! database as the desktop app, plus `vy import` for Bitwarden exports and
-//! `vy fingerprint` for fingerprint unlock.
+//! `vy fingerprint` for fingerprint unlock, `vy passwd` to change a master
+//! password.
 
 mod clipboard;
 mod fingerprint;
 mod import;
+mod passwd;
 mod tui;
 
 use std::path::PathBuf;
@@ -43,6 +45,12 @@ enum Command {
         #[arg(long, value_name = "NAME")]
         folder: Option<String>,
     },
+    /// Change the master password of a vault
+    Passwd {
+        /// Vault (required if there are several)
+        #[arg(long, value_name = "NAME")]
+        vault: Option<String>,
+    },
     /// Unlock a vault with a fingerprint instead of the master password (Linux, fprintd)
     Fingerprint {
         #[arg(value_enum)]
@@ -76,6 +84,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             vault,
             folder,
         } => import::run(&store, &file, vault.as_deref(), folder.as_deref())?,
+        Command::Passwd { vault } => passwd::run(&store, vault.as_deref())?,
         Command::Fingerprint { action, vault } => {
             fingerprint::run(&store, action, vault.as_deref())?
         }

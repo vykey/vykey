@@ -241,7 +241,7 @@ fn draw_unlock(f: &mut Frame, area: Rect, s: &UnlockScreen, app: &App) {
         } else {
             draw_input(f, field, &s.password, "Enter master password", true, false);
         }
-        let retry = app.fp_line.as_ref().is_some_and(|l| !l.waiting);
+        let retry = app.fp_line.as_ref().is_some_and(|l| l.retry);
         let items: &[&str] = if retry {
             &[
                 "enter: unlock",

@@ -36,6 +36,26 @@ that file to the path above.
 
 Password is passed as raw UTF-8 bytes, no normalization.
 
+## Keys (v5)
+
+Two keys:
+
+- **password key** (KEK) = Argon2id(password, `vault_meta.salt`);
+- **data key**: encrypts the verifier, entries and folders.
+
+`vault_meta.wrapped_key = encrypt(data key, password key)` (32-byte
+plaintext, layout below). Vaults created since v5 get a random data key.
+
+If `wrapped_key` is `NULL` (every vault created before v5, until its password
+is changed), the password key itself is the data key, as in v1–v4 and the Go
+app. Changing the password then wraps that same key, so a migrated vault is
+never re-encrypted.
+
+Changing the master password writes a new salt and `wrapped_key` and
+nothing else: entries and a fingerprint unlock key stay valid. The data key
+does not rotate, so a copy of the database from before the change still
+opens with the old password.
+
 ## Encryption
 
 AES-256-GCM, random 12-byte nonce per value, no associated data.
@@ -49,15 +69,21 @@ an empty string is encrypted like any other value.
 
 ## Password verifier
 
-`vault_meta.verifier = encrypt("verification", key)`. A password is correct
-iff the verifier decrypts and equals the ASCII string `verification`.
+`vault_meta.verifier = encrypt("verification", data key)`. A password is
+correct iff `wrapped_key` decrypts with the password key (if set) and the
+verifier decrypts with the resulting data key to the ASCII string
+`verification`.
 
 ## Schema
 
 Migrations live in `crates/vykey-core/migrations/` and are recorded in the
 `goose_db_version` table (kept from the Go app, which used
-[goose](https://github.com/pressly/goose)). Current version: **4**. vykey
+[goose](https://github.com/pressly/goose)). Current version: **5**. vykey
 refuses a database with a newer version than it knows.
+
+Before migrating an existing database, vykey copies it to
+`<path>.bak-v<old version>` (`VACUUM INTO`, mode `0600`); an existing backup
+of that version is kept.
 
 | Version | Migration | Change |
 |---------|-----------|--------|
@@ -65,6 +91,7 @@ refuses a database with a newer version than it knows.
 | 2 | `0002_entries_vault_id.sql` | `entries.vault_id` + index `idx_entries_vault_id (vault_id, deleted_at)`; with a single vault all entries are assigned to it |
 | 3 | `0003_entry_data.sql` | `entries.data`: encrypted JSON (see below); plaintext `title` / `totp_issuer` move into it on unlock |
 | 4 | `0004_folders.sql` | `folders` table + index `idx_folders_vault_id`; entries refer to a folder inside `entries.data` |
+| 5 | `0005_wrapped_key.sql` | `vault_meta.wrapped_key` (see "Keys"); existing rows stay `NULL` |
 
 ### `vault_meta`
 
@@ -74,6 +101,7 @@ refuses a database with a newer version than it knows.
 | `name`       | TEXT    | plaintext, used to select a vault on unlock |
 | `salt`       | BLOB    | 16 bytes                  |
 | `verifier`   | BLOB    | see above                 |
+| `wrapped_key`| BLOB    | v5: data key under the password key; `NULL` = password key is the data key |
 | `created_at` | INTEGER | unix seconds              |
 | `updated_at` | INTEGER | unix seconds              |
 
@@ -172,19 +200,25 @@ An older vykey-rs refuses a database with a newer schema (`SchemaTooNew`).
 
 ## Fingerprint unlock (outside the database)
 
-Opt-in per vault (`crates/vykey-biometric`). The 32-byte master key (the
-Argon2id output above, not the password) is stored raw in the user's Secret
-Service keyring, default collection:
+Opt-in per vault (`crates/vykey-biometric`). Which vaults have it is kept in
+`settings.json` (`fingerprint_vaults`: vault ids), not in the database.
 
-| Field      | Value |
-|------------|-------|
-| Label      | `vykey vault “<name>”` (not updated on rename) |
-| Attributes | `application` = `vykey`, `vault-id` = `vault_meta.id` |
-| Secret     | 32 bytes, content type `application/octet-stream` |
+The 32-byte data key (see "Keys"; not the password) is kept in the Linux
+kernel key retention service, never on disk:
 
-A key is accepted only if it decrypts `vault_meta.verifier`; otherwise the
-item is deleted. Deleting a vault deletes its item. Nothing in the database
-records whether fingerprint unlock is on.
+| Field       | Value |
+|-------------|-------|
+| Keyring     | user keyring `@u` |
+| Type        | `user` |
+| Description | `vykey:<vault_meta.id>` |
+| Payload     | the 32-byte data key |
+| Permissions | possessor: all; user: view, read, write, search, setattr |
+| Timeout     | 24 h, set each time the master password opens the vault |
+
+A fingerprint unlock reads the key but does not renew it, so the master
+password is needed after a reboot and at least once a day. A key is accepted
+only if it decrypts `vault_meta.verifier`; otherwise it is removed. Turning
+the feature off or deleting the vault removes the key.
 
 ## Known issues
 

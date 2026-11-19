@@ -26,25 +26,41 @@ fn now() -> i64 {
 pub struct VaultMeta {
     pub id: String,
     pub name: String,
+    /// Argon2id salt of the master password.
     pub salt: Vec<u8>,
+    /// `encrypt("verification")` under the data key.
     pub verifier: Vec<u8>,
+    /// The data key encrypted under the password key (schema v5). `None`:
+    /// the password key itself is the data key (vaults from before v5 whose
+    /// password was never changed).
+    pub wrapped_key: Option<Vec<u8>>,
     pub created_at: i64,
     pub updated_at: i64,
 }
 
-/// An unlocked vault: metadata plus the derived master key.
+/// An unlocked vault: metadata plus the data key.
 pub struct Vault {
     meta: VaultMeta,
     key: Key,
 }
 
+/// Derives the password key and recovers the data key. CPU-heavy (Argon2id).
+fn data_key(meta: &VaultMeta, password: &str) -> Result<Key> {
+    let kek = crypto::derive_key(password.as_bytes(), &meta.salt)?;
+    let key = match &meta.wrapped_key {
+        Some(wrapped) => crypto::unwrap_key(wrapped, &kek).map_err(|_| Error::WrongPassword)?,
+        None => kek,
+    };
+    if !crypto::check_verifier(&meta.verifier, &key) {
+        return Err(Error::WrongPassword);
+    }
+    Ok(key)
+}
+
 impl Vault {
-    /// Derives the key and checks it against the verifier. CPU-heavy (Argon2id).
+    /// Checks the password and opens the vault. CPU-heavy (Argon2id).
     pub fn unlock(meta: VaultMeta, password: &str) -> Result<Self> {
-        let key = crypto::derive_key(password.as_bytes(), &meta.salt)?;
-        if !crypto::check_verifier(&meta.verifier, &key) {
-            return Err(Error::WrongPassword);
-        }
+        let key = data_key(&meta, password)?;
         Ok(Self { meta, key })
     }
 
@@ -59,17 +75,20 @@ impl Vault {
         Ok(Self { meta, key })
     }
 
-    /// The master key. Anyone holding it (and the database) can read the
+    /// The data key. Anyone holding it (and the database) can read the
     /// vault, so hand it only to storage that protects it, such as the OS
-    /// keyring for fingerprint unlock.
+    /// keyring for fingerprint unlock. It survives password changes.
     pub fn key(&self) -> &Key {
         &self.key
     }
 
-    /// Prepares a new vault (not yet stored). CPU-heavy (Argon2id).
+    /// Prepares a new vault (not yet stored): a random data key wrapped
+    /// under the password. CPU-heavy (Argon2id).
     pub fn create(name: &str, password: &str) -> Result<Self> {
         let salt = crypto::generate_salt();
-        let key = crypto::derive_key(password.as_bytes(), &salt)?;
+        let kek = crypto::derive_key(password.as_bytes(), &salt)?;
+        let key = crypto::generate_key();
+        let wrapped_key = crypto::wrap_key(&key, &kek)?;
         let verifier = crypto::new_verifier(&key)?;
         let ts = now();
         Ok(Self {
@@ -78,11 +97,22 @@ impl Vault {
                 name: name.to_owned(),
                 salt: salt.to_vec(),
                 verifier,
+                wrapped_key: Some(wrapped_key),
                 created_at: ts,
                 updated_at: ts,
             },
             key,
         })
+    }
+
+    /// What a password change needs, detached from the vault so the Argon2
+    /// work can run on another thread: [`PasswordChange::prepare`], then
+    /// [`Store::change_password`].
+    pub fn password_change(&self) -> PasswordChange {
+        PasswordChange {
+            meta: self.meta.clone(),
+            key: self.key.clone(),
+        }
     }
 
     pub fn meta(&self) -> &VaultMeta {
@@ -114,6 +144,38 @@ impl Vault {
             })
             .transpose()
     }
+}
+
+/// A pending master password change of one vault; see
+/// [`Vault::password_change`].
+pub struct PasswordChange {
+    meta: VaultMeta,
+    key: Key,
+}
+
+impl PasswordChange {
+    /// Checks `current` and wraps the data key under `new` with a fresh
+    /// salt. Entries are not touched. CPU-heavy (two Argon2id runs).
+    pub fn prepare(self, current: &str, new: &str) -> Result<KeyWrap> {
+        if *data_key(&self.meta, current)? != *self.key {
+            return Err(Error::WrongPassword);
+        }
+        let salt = crypto::generate_salt();
+        let kek = crypto::derive_key(new.as_bytes(), &salt)?;
+        Ok(KeyWrap {
+            vault_id: self.meta.id,
+            salt: salt.to_vec(),
+            wrapped_key: crypto::wrap_key(&self.key, &kek)?,
+        })
+    }
+}
+
+/// New salt and wrapped data key from [`PasswordChange::prepare`], to be
+/// saved with [`Store::change_password`].
+pub struct KeyWrap {
+    vault_id: String,
+    salt: Vec<u8>,
+    wrapped_key: Vec<u8>,
 }
 
 /// Kind of entry. Stored inside the encrypted `data` JSON.
@@ -372,7 +434,33 @@ fn meta_from_row(r: &Row<'_>) -> rusqlite::Result<VaultMeta> {
         verifier: r.get(3)?,
         created_at: r.get(4)?,
         updated_at: r.get(5)?,
+        wrapped_key: r.get(6)?,
     })
+}
+
+/// Copies the database to `<path>.bak-v<version>` before a migration, so a
+/// failed upgrade or a downgrade can go back. An existing backup of that
+/// version is kept as is.
+fn backup(conn: &Connection, path: &Path, version: i64) -> Result<()> {
+    let mut target = path.as_os_str().to_owned();
+    target.push(format!(".bak-v{version}"));
+    let target = std::path::PathBuf::from(target);
+    if target.exists() {
+        return Ok(());
+    }
+    let Some(target_str) = target.to_str() else {
+        return Err(Error::Io(std::io::Error::other(
+            "database path is not valid UTF-8; cannot write a backup",
+        )));
+    };
+    // A consistent copy, WAL included.
+    conn.execute("VACUUM INTO ?1", [target_str])?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o600));
+    }
+    Ok(())
 }
 
 /// Trims and maps empty strings to `None` (Go stores `NULL` for unset fields).
@@ -395,13 +483,17 @@ impl Store {
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
+        let version = schema::version(&conn)?;
+        if version > 0 && version < schema::SCHEMA_VERSION {
+            backup(&conn, path, version)?;
+        }
         schema::migrate(&mut conn)?;
         Ok(Self { conn })
     }
 
     pub fn list_vaults(&self) -> Result<Vec<VaultMeta>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, salt, verifier, created_at, updated_at \
+            "SELECT id, name, salt, verifier, created_at, updated_at, wrapped_key \
              FROM vault_meta ORDER BY created_at, name",
         )?;
         let rows = stmt.query_map([], meta_from_row)?;
@@ -411,7 +503,7 @@ impl Store {
     pub fn vault_meta(&self, name: &str) -> Result<VaultMeta> {
         self.conn
             .query_row(
-                "SELECT id, name, salt, verifier, created_at, updated_at \
+                "SELECT id, name, salt, verifier, created_at, updated_at, wrapped_key \
                  FROM vault_meta WHERE name = ?1 LIMIT 1",
                 [name],
                 meta_from_row,
@@ -427,14 +519,44 @@ impl Store {
             return Err(Error::VaultExists(m.name.clone()));
         }
         self.conn.execute(
-            "INSERT INTO vault_meta (id, name, salt, verifier, created_at, updated_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![m.id, m.name, m.salt, m.verifier, m.created_at, m.updated_at],
+            "INSERT INTO vault_meta \
+             (id, name, salt, verifier, wrapped_key, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                m.id,
+                m.name,
+                m.salt,
+                m.verifier,
+                m.wrapped_key,
+                m.created_at,
+                m.updated_at
+            ],
         )?;
         Ok(())
     }
 
     /// Renames a vault. Names are unique per database.
+    /// Saves a new master password (see [`Vault::password_change`]). Only
+    /// the salt and the wrapped data key change; the data key, entries and
+    /// a fingerprint unlock key stay valid.
+    pub fn change_password(&self, vault: &mut Vault, wrap: KeyWrap) -> Result<()> {
+        if wrap.vault_id != vault.meta.id {
+            return Err(Error::VaultNotFound(vault.meta.name.clone()));
+        }
+        let ts = now();
+        let changed = self.conn.execute(
+            "UPDATE vault_meta SET salt = ?2, wrapped_key = ?3, updated_at = ?4 WHERE id = ?1",
+            params![vault.meta.id, wrap.salt, wrap.wrapped_key, ts],
+        )?;
+        if changed != 1 {
+            return Err(Error::VaultNotFound(vault.meta.name.clone()));
+        }
+        vault.meta.salt = wrap.salt;
+        vault.meta.wrapped_key = Some(wrap.wrapped_key);
+        vault.meta.updated_at = ts;
+        Ok(())
+    }
+
     pub fn rename_vault(&self, vault: &mut Vault, name: &str) -> Result<()> {
         let name = name.trim();
         if let Ok(other) = self.vault_meta(name)
@@ -837,6 +959,44 @@ mod tests {
             Err(Error::WrongPassword)
         ));
         Vault::unlock(meta, "pw").unwrap();
+    }
+
+    #[test]
+    fn change_password() {
+        let (_d, store) = store();
+        let v = Vault::create("main", "old password").unwrap();
+        assert!(v.meta().wrapped_key.is_some());
+        store.insert_vault(&v).unwrap();
+        let mut input = EntryInput::default();
+        input.title = "t".into();
+        input.password = Some("secret".into());
+        let id = store.create_entry(&v, &input).unwrap();
+
+        let mut vault = Vault::unlock(store.vault_meta("main").unwrap(), "old password").unwrap();
+        let key = vault.key().clone();
+        let wrap = vault
+            .password_change()
+            .prepare("old password", "new password")
+            .unwrap();
+        store.change_password(&mut vault, wrap).unwrap();
+
+        let meta = store.vault_meta("main").unwrap();
+        assert_eq!(meta.salt, vault.meta().salt);
+        assert!(matches!(
+            Vault::unlock(meta.clone(), "old password"),
+            Err(Error::WrongPassword)
+        ));
+        let reopened = Vault::unlock(meta, "new password").unwrap();
+        assert_eq!(reopened.key().as_slice(), key.as_slice());
+        assert_eq!(
+            store.get_entry(&reopened, &id).unwrap().password.as_deref(),
+            Some("secret")
+        );
+
+        // A change prepared for another vault is refused.
+        let other = Vault::create("other", "pw").unwrap();
+        let wrap = other.password_change().prepare("pw", "x").unwrap();
+        assert!(store.change_password(&mut vault, wrap).is_err());
     }
 
     #[test]
@@ -1248,6 +1408,20 @@ mod tests {
             .unwrap()
             .collect::<rusqlite::Result<_>>()
             .unwrap();
-        assert_eq!(versions, vec![0, 1, 2, 3, 4]);
+        assert_eq!(versions, vec![0, 1, 2, 3, 4, 5]);
+        // A fresh database has nothing to back up.
+        assert_eq!(
+            std::fs::read_dir(dir.path())
+                .unwrap()
+                .filter(|e| {
+                    e.as_ref()
+                        .unwrap()
+                        .file_name()
+                        .to_string_lossy()
+                        .contains(".bak-")
+                })
+                .count(),
+            0
+        );
     }
 }

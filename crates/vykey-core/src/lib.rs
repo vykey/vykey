@@ -18,4 +18,6 @@ pub mod store;
 pub mod totp;
 
 pub use error::{Error, Result};
-pub use store::{Card, Entry, EntryInput, EntryKind, Folder, Store, Vault, VaultMeta};
+pub use store::{
+    Card, Entry, EntryInput, EntryKind, Folder, KeyWrap, PasswordChange, Store, Vault, VaultMeta,
+};

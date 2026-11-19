@@ -1,23 +1,29 @@
 //! Fingerprint unlock.
 //!
-//! A fingerprint cannot produce a key, so the vault key is kept by the OS
-//! and handed out after the reader confirms the finger:
+//! A fingerprint cannot produce a key, so the vault's data key is kept by
+//! the OS for a limited time and handed out after the reader confirms the
+//! finger:
 //!
-//! 1. With the vault open, [`enable`] stores its master key in the user's
-//!    keyring (Secret Service: GNOME Keyring, KWallet, KeePassXC).
+//! 1. Each time the master password opens a vault that has fingerprint
+//!    unlock on (the app keeps that flag in its settings), [`store_key`]
+//!    puts the data key in the kernel keyring for [`KEY_LIFETIME`].
 //! 2. On the unlock screen [`verify`] asks fprintd to check a finger — the
-//!    same reader and prompts `sudo` uses through `pam_fprintd`.
+//!    same reader and prompts `sudo` uses through `pam_fprintd`. Without a
+//!    stored key ([`has_key`]) there is nothing to unlock, so the app asks
+//!    for the password instead.
 //! 3. On a match, [`open`] reads the key back and opens the vault without
-//!    Argon2 or the master password.
+//!    Argon2 or the master password. This does not extend the key's life.
 //!
-//! Security note: on Linux the fingerprint only gates vykey's own UI. The
-//! keyring hands the key to any process of the same user while it is
-//! unlocked; there is no hardware binding as with Touch ID or Windows Hello.
-//! A stale key (vault re-created, database replaced) is detected by the
-//! verifier and removed.
+//! So the master password is needed after every reboot (the kernel keyring
+//! is memory only) and at least once a day.
 //!
-//! Every call blocks (D-Bus round trips, a keyring prompt, waiting for a
-//! finger): run them off the UI thread.
+//! Security note: on Linux the fingerprint only gates vykey's own UI. Any
+//! process of the same user can read the key while it lives; there is no
+//! hardware binding as with Touch ID or Windows Hello. A stale key (vault
+//! re-created, database replaced) is detected by the verifier and removed.
+//!
+//! [`verify`] blocks until a finger, timeout or cancel: run it off the UI
+//! thread. The key calls are single system calls.
 
 #![forbid(unsafe_code)]
 
@@ -44,6 +50,9 @@ pub const VERIFY_TIMEOUT: Duration = Duration::from_secs(30);
 /// Failed scans before [`verify`] gives up, as `pam_fprintd`.
 pub const MAX_ATTEMPTS: u32 = 3;
 
+/// How long a stored key lives after the master password was entered.
+pub const KEY_LIFETIME: Duration = Duration::from_secs(24 * 60 * 60);
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("fingerprint unlock is not supported on this system")]
@@ -60,10 +69,8 @@ pub enum Error {
     Denied(String),
     #[error("fingerprint reader error: {0}")]
     Reader(String),
-    #[error("no system keyring (Secret Service): {0}")]
-    NoKeyring(String),
-    #[error("the keyring request was dismissed")]
-    Dismissed,
+    #[error("kernel keyring error: {0}")]
+    Keyring(String),
     #[error("D-Bus error: {0}")]
     Dbus(String),
 }
@@ -196,23 +203,21 @@ pub fn verify(cancel: &Cancel, timeout: Duration, on_event: impl FnMut(Event)) -
     platform::verify(&cancel.0, timeout, on_event)
 }
 
-/// Whether the keyring holds a key for this vault. Never shows a prompt.
-pub fn is_enabled(vault_id: &str) -> Result<bool> {
+/// Keeps the data key of a vault just opened with the master password for
+/// [`KEY_LIFETIME`], replacing an older one. Call it only for vaults with
+/// fingerprint unlock on, and never after a fingerprint unlock.
+pub fn store_key(vault_id: &str, key: &Key) -> Result<()> {
+    platform::store_secret(vault_id, key.as_slice(), KEY_LIFETIME)
+}
+
+/// Whether a key is stored (not expired) for this vault, i.e. whether a
+/// finger can open it now.
+pub fn has_key(vault_id: &str) -> bool {
     platform::has_secret(vault_id)
 }
 
-/// Stores the key of an open vault (replacing an older one). May show the
-/// keyring's unlock prompt.
-pub fn enable(meta: &VaultMeta, key: &Key) -> Result<()> {
-    platform::store_secret(
-        &meta.id,
-        &format!("vykey vault “{}”", meta.name),
-        key.as_slice(),
-    )
-}
-
 /// Removes the stored key; nothing to do if there is none.
-pub fn disable(vault_id: &str) -> Result<()> {
+pub fn remove_key(vault_id: &str) -> Result<()> {
     platform::delete_secret(vault_id)
 }
 
