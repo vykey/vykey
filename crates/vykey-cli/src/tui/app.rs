@@ -528,7 +528,11 @@ impl App {
             quit: false,
             clipboard: Clipboard::default(),
             last_activity: Instant::now(),
-            lock_timeout: vykey_core::settings::lock_timeout_from_env(),
+            // Same settings.json as the desktop app.
+            lock_timeout: vykey_core::paths::settings_path()
+                .map(|p| vykey_core::settings::Settings::load(&p))
+                .unwrap_or_default()
+                .lock_timeout(),
             fp_support: None,
             fp_probe,
             fp_check: None,

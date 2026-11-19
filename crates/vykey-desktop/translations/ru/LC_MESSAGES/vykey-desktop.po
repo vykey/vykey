@@ -892,3 +892,35 @@ msgstr "Вход по отпечатку включён"
 
 msgid "Fingerprint unlock disabled"
 msgstr "Вход по отпечатку выключен"
+
+# ---- auto-lock ----
+
+msgid "Auto-lock"
+msgstr "Автоблокировка"
+
+msgid "Lock the vault after this long without activity"
+msgstr "Блокировать хранилище после такого времени бездействия"
+
+msgid "Set by the VYKEY_LOCK_TIMEOUT environment variable"
+msgstr "Задано переменной окружения VYKEY_LOCK_TIMEOUT"
+
+msgid "{n} second"
+msgid_plural "{n} seconds"
+msgstr[0] "{n} секунда"
+msgstr[1] "{n} секунды"
+msgstr[2] "{n} секунд"
+
+msgid "{n} minute"
+msgid_plural "{n} minutes"
+msgstr[0] "{n} минута"
+msgstr[1] "{n} минуты"
+msgstr[2] "{n} минут"
+
+msgid "{n} hour"
+msgid_plural "{n} hours"
+msgstr[0] "{n} час"
+msgstr[1] "{n} часа"
+msgstr[2] "{n} часов"
+
+msgid "Never"
+msgstr "Никогда"

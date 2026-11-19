@@ -211,6 +211,29 @@ impl App {
         text::error(&self.ui().global::<Tr>(), e)
     }
 
+    /// Fills the auto-lock dropdown (names depend on the UI language).
+    fn update_lock_choices(&self) {
+        let ui = self.ui();
+        let tr = ui.global::<Tr>();
+        let current = self.settings.lock_timeout;
+        let options = lock_options(current);
+        let names: Vec<SharedString> = options.iter().map(|&s| lock_name(&tr, s)).collect();
+        ui.set_lock_names(ModelRc::new(VecModel::from(names)));
+        ui.set_lock_index(options.iter().position(|&s| s == current).unwrap_or(0) as i32);
+        ui.set_lock_env(vykey_core::settings::lock_timeout_from_env().is_some());
+    }
+
+    fn set_lock_timeout(&mut self, index: i32) {
+        let options = lock_options(self.settings.lock_timeout);
+        let Some(&secs) = usize::try_from(index).ok().and_then(|i| options.get(i)) else {
+            return;
+        };
+        self.settings.lock_timeout = secs;
+        self.lock_timeout = self.settings.lock_timeout();
+        self.update_lock_choices();
+        self.save_settings();
+    }
+
     fn save_settings(&mut self) {
         let saved = self.settings_path.as_deref().map(|p| self.settings.save(p));
         if !matches!(saved, Some(Ok(()))) {
@@ -1370,6 +1393,12 @@ impl App {
     // ---------- periodic work ----------
 
     fn tick(&mut self) {
+        // The window may move to a screen with another scale factor.
+        let ui = self.ui();
+        let hidpi = ui.window().scale_factor() >= 1.5;
+        if ui.global::<Theme>().get_hidpi() != hidpi {
+            ui.global::<Theme>().set_hidpi(hidpi);
+        }
         if self.vault.is_some() {
             if let Some(timeout) = self.lock_timeout
                 && self.last_activity.elapsed() >= timeout
@@ -1422,6 +1451,31 @@ fn theme_mode(index: i32) -> ThemeMode {
         1 => ThemeMode::Light,
         2 => ThemeMode::Dark,
         _ => ThemeMode::System,
+    }
+}
+
+/// Auto-lock choices in the settings dropdown, in seconds; 0 = never.
+const LOCK_PRESETS: &[u64] = &[60, 5 * 60, 15 * 60, 30 * 60, 60 * 60, 0];
+
+/// Dropdown values: the presets, plus a value set by hand in settings.json,
+/// ascending with "never" last.
+fn lock_options(current: u64) -> Vec<u64> {
+    let mut options: Vec<u64> = LOCK_PRESETS.iter().copied().filter(|&s| s != 0).collect();
+    if current != 0 && !options.contains(&current) {
+        options.push(current);
+        options.sort_unstable();
+    }
+    options.push(0);
+    options
+}
+
+fn lock_name(tr: &Tr, secs: u64) -> SharedString {
+    let n = |v: u64| i32::try_from(v).unwrap_or(i32::MAX);
+    match secs {
+        0 => tr.invoke_lock_never(),
+        s if s % 3600 == 0 => tr.invoke_lock_hours(n(s / 3600)),
+        s if s % 60 == 0 => tr.invoke_lock_minutes(n(s / 60)),
+        s => tr.invoke_lock_seconds(n(s)),
     }
 }
 
@@ -1543,7 +1597,7 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
             selected: None,
             deleting: None,
             last_activity: Instant::now(),
-            lock_timeout: vykey_core::settings::lock_timeout_from_env(),
+            lock_timeout: settings.lock_timeout(),
             clipboard: None,
             copied: None,
             toast_until: None,
@@ -1557,6 +1611,7 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
         });
     });
     with_app(App::load_vaults);
+    with_app(|app| app.update_lock_choices());
     // A D-Bus round trip (and maybe starting fprintd): off the UI thread.
     std::thread::spawn(|| {
         let support = biometric::availability();
@@ -1625,6 +1680,12 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
     ui.on_create_vault(|name, pw| with_app(|app| app.start_create(&name, pw)));
     ui.on_fp_retry(|| with_app(App::start_fingerprint));
     ui.on_unlock_context_changed(|| with_app(App::start_fingerprint));
+    ui.on_set_lock_timeout(|index| {
+        with_app(|app| {
+            app.touch();
+            app.set_lock_timeout(index);
+        })
+    });
     ui.on_set_fingerprint(|on| {
         with_app(|app| {
             app.touch();
@@ -1659,6 +1720,7 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
             ui.set_language_mode(index);
             ui.set_language_names(language_names(&ui));
             app.settings.language = code.map(str::to_owned);
+            app.update_lock_choices();
             app.refresh_texts();
             app.save_settings();
         })
@@ -1846,6 +1908,13 @@ mod tests {
             .collect();
         listed.sort();
         assert_eq!(bundled, listed, "LANGUAGES and translations/ disagree");
+    }
+
+    #[test]
+    fn lock_choices() {
+        assert_eq!(lock_options(300), [60, 300, 900, 1800, 3600, 0]);
+        assert_eq!(lock_options(0), [60, 300, 900, 1800, 3600, 0]);
+        assert_eq!(lock_options(120), [60, 120, 300, 900, 1800, 3600, 0]);
     }
 
     #[test]
