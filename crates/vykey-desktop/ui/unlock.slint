@@ -19,7 +19,11 @@ component UnlockForm inherits VerticalLayout {
     in-out property <int> vault-index;
     in property <bool> busy;
     in-out property <string> error;
+    // Fingerprint: 0 = off, 1 = waiting for a finger, 2 = stopped (offer a retry).
+    in property <int> fp-state;
+    in property <string> fp-message;
     callback submit(string, string);
+    callback fp-retry();
 
     property <VaultItem> current: root.vaults[root.vault-index];
 
@@ -163,6 +167,39 @@ component UnlockForm inherits VerticalLayout {
         font-size: 15px;
         clicked => { root.go(); }
     }
+
+    // Fingerprint prompt, like pam_fprintd's under sudo. The password
+    // field keeps working meanwhile.
+    if root.fp-state != 0: VerticalLayout {
+        spacing: 6px;
+        padding-top: 4px;
+
+        HorizontalLayout {
+            alignment: center;
+            Icon {
+                source: Icons.fingerprint;
+                size: 26px;
+                colorize: root.fp-state == 1 ? Theme.accent : Theme.text-tertiary;
+            }
+        }
+
+        if root.fp-message != "": Text {
+            text: root.fp-message;
+            font-size: 12px;
+            color: Theme.text-secondary;
+            wrap: word-wrap;
+            horizontal-alignment: center;
+        }
+
+        if root.fp-state == 2: HorizontalLayout {
+            alignment: center;
+            LinkText {
+                text: @tr("Use fingerprint");
+                font-size: 12px;
+                clicked => { root.fp-retry(); }
+            }
+        }
+    }
 }
 
 component CreateForm inherits VerticalLayout {
@@ -257,11 +294,20 @@ export component UnlockScreen inherits Rectangle {
     in property <bool> busy: false;
     in-out property <string> error;
     in-out property <bool> create-mode: false;
+    in property <int> fp-state;
+    in property <string> fp-message;
 
     callback unlock(string /* vault */, string /* password */);
     callback create(string /* name */, string /* password */);
+    callback fp-retry();
+    // Another vault picked or the create form toggled: the fingerprint
+    // check (if any) is for the wrong vault now.
+    callback context-changed();
 
     property <bool> creating: root.create-mode || root.vaults.length == 0;
+
+    changed vault-index => { root.context-changed(); }
+    changed create-mode => { root.context-changed(); }
 
     background: Theme.bg-base;
     clip: true;
@@ -334,7 +380,10 @@ export component UnlockScreen inherits Rectangle {
                 vault-index <=> root.vault-index;
                 busy: root.busy;
                 error <=> root.error;
+                fp-state: root.fp-state;
+                fp-message: root.fp-message;
                 submit(vault, password) => { root.unlock(vault, password); }
+                fp-retry => { root.fp-retry(); }
             }
 
             if root.creating: CreateForm {

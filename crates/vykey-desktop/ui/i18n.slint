@@ -37,6 +37,37 @@ export global Tr {
     public pure function copy-failed() -> string { @tr("Could not copy") }
     public pure function settings-save-failed() -> string { @tr("Could not save settings") }
 
+    // ---- fingerprint ----
+    // Finger names follow vykey_biometric::Finger, 0 = left thumb … 9 = right little finger.
+    public pure function finger(index: int) -> string {
+        index == 0 ? @tr("left thumb") : index == 1 ? @tr("left index finger")
+            : index == 2 ? @tr("left middle finger") : index == 3 ? @tr("left ring finger")
+            : index == 4 ? @tr("left little finger") : index == 5 ? @tr("right thumb")
+            : index == 6 ? @tr("right index finger") : index == 7 ? @tr("right middle finger")
+            : index == 8 ? @tr("right ring finger") : @tr("right little finger")
+    }
+    public pure function fp-place(finger: string) -> string { @tr("Place your {0} on the fingerprint reader", finger) }
+    public pure function fp-swipe(finger: string) -> string { @tr("Swipe your {0} across the fingerprint reader", finger) }
+    public pure function fp-place-any() -> string { @tr("Place your finger on the fingerprint reader") }
+    public pure function fp-swipe-any() -> string { @tr("Swipe your finger across the fingerprint reader") }
+    public pure function fp-retry-scan() -> string { @tr("Could not read the finger — try again") }
+    public pure function fp-swipe-short() -> string { @tr("Swipe was too short — try again") }
+    public pure function fp-not-centered() -> string { @tr("Finger was not centered — try again") }
+    public pure function fp-remove-retry() -> string { @tr("Remove your finger and try again") }
+    public pure function fp-no-match(n: int) -> string {
+        @tr("Fingerprint not recognized, {n} attempt left" | "Fingerprint not recognized, {n} attempts left" % n)
+    }
+    public pure function fp-failed() -> string { @tr("Fingerprint not recognized") }
+    public pure function fp-timed-out() -> string { @tr("Fingerprint check timed out") }
+    public pure function fp-busy() -> string { @tr("The fingerprint reader is in use by another program") }
+    public pure function fp-reset() -> string {
+        @tr("The saved fingerprint key no longer fits this vault — enter the master password")
+    }
+    public pure function fp-keyring-dismissed() -> string { @tr("The system keyring was not unlocked") }
+    public pure function fp-error(details: string) -> string { @tr("Fingerprint unlock failed: {0}", details) }
+    public pure function fp-on() -> string { @tr("Fingerprint unlock enabled") }
+    public pure function fp-off() -> string { @tr("Fingerprint unlock disabled") }
+
     // ---- entries ----
     // List subtitle of a card whose payment system is unknown.
     public pure function card() -> string { @tr("Card") }

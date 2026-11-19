@@ -35,6 +35,11 @@ export component AppWindow inherits Window {
     in-out property <bool> create-mode;
     callback unlock(string, string);
     callback create-vault(string, string);
+    // Fingerprint prompt on the unlock screen (see UnlockForm).
+    in property <int> fp-state;
+    in property <string> fp-message;
+    callback fp-retry();
+    callback unlock-context-changed();
 
     // ---- main ----
     in-out property <Page> page: Page.vault;
@@ -70,6 +75,12 @@ export component AppWindow inherits Window {
     in property <int> language-mode;
     in property <[string]> language-names;
     callback set-language(int);
+    // Fingerprint unlock of the open vault: fp-support 0 = no reader (row
+    // hidden), 1 = reader without enrolled fingers, 2 = ready.
+    in property <int> fp-support;
+    in property <bool> fp-enabled;
+    in property <bool> fp-toggle-busy;
+    callback set-fingerprint(bool);
     callback select-filter(int);
     callback select-folder(string);
     callback toggle-favorite(string);
@@ -164,8 +175,12 @@ export component AppWindow inherits Window {
             busy: root.busy;
             error <=> root.unlock-error;
             create-mode <=> root.create-mode;
+            fp-state: root.fp-state;
+            fp-message: root.fp-message;
             unlock(vault, password) => { root.unlock(vault, password); }
             create(name, password) => { root.create-vault(name, password); }
+            fp-retry => { root.fp-retry(); }
+            context-changed => { root.unlock-context-changed(); }
         }
 
         if root.screen == Screen.main: HorizontalLayout {
@@ -234,6 +249,11 @@ export component AppWindow inherits Window {
                 language-mode: root.language-mode;
                 language-names: root.language-names;
                 set-language(l) => { root.set-language(l); }
+                vault-name: root.vault-name;
+                fp-support: root.fp-support;
+                fp-enabled: root.fp-enabled;
+                fp-toggle-busy: root.fp-toggle-busy;
+                set-fingerprint(on) => { root.set-fingerprint(on); }
             }
         }
 

@@ -13,6 +13,9 @@ use slint::{
     ComponentHandle, Model, ModelRc, Rgba8Pixel, SharedPixelBuffer, SharedString, Timer, TimerMode,
     VecModel,
 };
+use vykey_biometric::{
+    self as biometric, Availability, Cancel as FpCancel, Event as FpEvent, Retry, Verdict,
+};
 use vykey_core::audit::{self, IssueKind, Severity};
 use vykey_core::card::{self as card_fmt, ExpiryStatus};
 use vykey_core::settings::{Settings, ThemeMode};
@@ -27,8 +30,6 @@ const CLIPBOARD_CLEAR_AFTER: Duration = Duration::from_secs(30);
 /// Length of the delete animation (see `Dust` in vault.slint).
 const SNAP_DURATION: Duration = Duration::from_millis(1500);
 const TOAST_DURATION: Duration = Duration::from_millis(2200);
-/// Used when `VYKEY_LOCK_TIMEOUT` is not set.
-const DEFAULT_LOCK_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
 struct App {
     ui: slint::Weak<AppWindow>,
@@ -64,6 +65,34 @@ struct App {
     settings: Settings,
     /// Where `settings` is saved; `None` if no config directory is known.
     settings_path: Option<PathBuf>,
+    /// Fingerprint reader, probed once at start.
+    fp_support: Availability,
+    /// Stops the fingerprint check running on the unlock screen, and the
+    /// id of the vault it is for.
+    fp_cancel: Option<(FpCancel, String)>,
+    /// Bumped whenever that check is stopped: results of older ones are dropped.
+    fp_round: u64,
+}
+
+/// End of a fingerprint check on the unlock screen.
+enum FpOutcome {
+    Opened(Vault),
+    /// The stored key no longer opens the vault and was removed.
+    Reset,
+    NoMatch,
+    TimedOut,
+    Failed(biometric::Error),
+}
+
+/// Runs `f` on the UI thread, unless fingerprint check `round` was stopped.
+fn post_fp(round: u64, f: impl FnOnce(&mut App) + Send + 'static) {
+    let _ = slint::invoke_from_event_loop(move || {
+        with_app(|app| {
+            if app.fp_round == round {
+                f(app);
+            }
+        })
+    });
 }
 
 thread_local! {
@@ -282,8 +311,13 @@ impl App {
     fn finish_unlock(&mut self, result: vykey_core::Result<Vault>) {
         let ui = self.ui();
         ui.set_busy(false);
+        // Password and fingerprint may both succeed: the first one wins.
+        if self.vault.is_some() {
+            return;
+        }
         match result {
             Ok(vault) => {
+                self.stop_fingerprint();
                 // Bind entries written without a vault and encrypt legacy
                 // plaintext titles (databases from older vykey versions).
                 if let Some(store) = &self.store
@@ -309,6 +343,7 @@ impl App {
                     self.update_detail();
                 }
                 ui.set_screen(Screen::Main);
+                self.refresh_fp_enabled();
             }
             Err(e) => ui.set_unlock_error(self.error_text(&e).into()),
         }
@@ -353,6 +388,219 @@ impl App {
             ui.set_vault_index(i as i32);
         }
         ui.set_screen(Screen::Unlock);
+        self.start_fingerprint();
+    }
+
+    // ---------- fingerprint ----------
+
+    fn fp_text(&self, event: FpEvent) -> String {
+        let ui = self.ui();
+        let tr = ui.global::<Tr>();
+        // `Finger` is declared in the order of `Tr.finger`.
+        let finger = |f: biometric::Finger| tr.invoke_finger(f as i32);
+        match event {
+            FpEvent::Prompt {
+                finger: Some(f),
+                swipe: false,
+            } => tr.invoke_fp_place(finger(f)),
+            FpEvent::Prompt {
+                finger: Some(f),
+                swipe: true,
+            } => tr.invoke_fp_swipe(finger(f)),
+            FpEvent::Prompt {
+                finger: None,
+                swipe: false,
+            } => tr.invoke_fp_place_any(),
+            FpEvent::Prompt {
+                finger: None,
+                swipe: true,
+            } => tr.invoke_fp_swipe_any(),
+            FpEvent::Retry(Retry::Scan) => tr.invoke_fp_retry_scan(),
+            FpEvent::Retry(Retry::SwipeTooShort) => tr.invoke_fp_swipe_short(),
+            FpEvent::Retry(Retry::NotCentered) => tr.invoke_fp_not_centered(),
+            FpEvent::Retry(Retry::RemoveAndRetry) => tr.invoke_fp_remove_retry(),
+            FpEvent::NoMatch { attempts_left } => tr.invoke_fp_no_match(attempts_left as i32),
+        }
+        .into()
+    }
+
+    fn fp_error_text(&self, e: &biometric::Error) -> String {
+        let ui = self.ui();
+        let tr = ui.global::<Tr>();
+        match e {
+            biometric::Error::Busy => tr.invoke_fp_busy(),
+            biometric::Error::Dismissed => tr.invoke_fp_keyring_dismissed(),
+            e => tr.invoke_fp_error(e.to_string().into()),
+        }
+        .into()
+    }
+
+    /// `state`: 0 = hidden, 1 = waiting for a finger, 2 = stopped (retry link).
+    fn fp_show(&self, state: i32, text: &str) {
+        let ui = self.ui();
+        ui.set_fp_state(state);
+        ui.set_fp_message(text.into());
+    }
+
+    /// Stops the fingerprint check, if any, and hides its prompt.
+    fn stop_fingerprint(&mut self) {
+        self.fp_round += 1;
+        if let Some((cancel, _)) = self.fp_cancel.take() {
+            cancel.cancel();
+        }
+        self.fp_show(0, "");
+    }
+
+    /// On the unlock screen: if the selected vault has fingerprint unlock,
+    /// waits for a finger in the background, like sudo with pam_fprintd.
+    /// The password field keeps working meanwhile.
+    fn start_fingerprint(&mut self) {
+        let ui = self.ui();
+        let meta = if self.fp_support != Availability::Ready
+            || self.vault.is_some()
+            || ui.get_screen() != Screen::Unlock
+            || ui.get_create_mode()
+        {
+            None
+        } else {
+            usize::try_from(ui.get_vault_index())
+                .ok()
+                .and_then(|i| self.vaults.get(i))
+                .cloned()
+        };
+        // Already waiting for this vault (several triggers fire at start).
+        if let (Some(meta), Some((_, id))) = (&meta, &self.fp_cancel)
+            && meta.id == *id
+        {
+            return;
+        }
+        self.stop_fingerprint();
+        let Some(meta) = meta else {
+            return;
+        };
+        let cancel = FpCancel::new();
+        self.fp_cancel = Some((cancel.clone(), meta.id.clone()));
+        let round = self.fp_round;
+        std::thread::spawn(move || {
+            // A search only: never shows a keyring prompt.
+            if !biometric::is_enabled(&meta.id).unwrap_or(false) || cancel.is_cancelled() {
+                return;
+            }
+            post_fp(round, |app| {
+                let text = app.fp_text(FpEvent::Prompt {
+                    finger: None,
+                    swipe: false,
+                });
+                app.fp_show(1, &text);
+            });
+            let verdict = biometric::verify(&cancel, biometric::VERIFY_TIMEOUT, |event| {
+                post_fp(round, move |app| {
+                    let text = app.fp_text(event);
+                    app.fp_show(1, &text);
+                });
+            });
+            let outcome = match verdict {
+                Ok(Verdict::Match) => match biometric::open(meta) {
+                    Ok(Some(vault)) => FpOutcome::Opened(vault),
+                    Ok(None) => FpOutcome::Reset,
+                    Err(e) => FpOutcome::Failed(e),
+                },
+                Ok(Verdict::NoMatch) => FpOutcome::NoMatch,
+                Ok(Verdict::TimedOut) => FpOutcome::TimedOut,
+                Ok(Verdict::Cancelled) => return,
+                Err(e) => FpOutcome::Failed(e),
+            };
+            post_fp(round, move |app| app.finish_fingerprint(outcome));
+        });
+    }
+
+    fn finish_fingerprint(&mut self, outcome: FpOutcome) {
+        self.fp_cancel = None;
+        let text = match outcome {
+            FpOutcome::Opened(vault) => {
+                self.finish_unlock(Ok(vault));
+                return;
+            }
+            FpOutcome::Reset => {
+                self.stop_fingerprint();
+                let text = self.say(|tr| tr.invoke_fp_reset());
+                self.ui().set_unlock_error(text.into());
+                return;
+            }
+            FpOutcome::NoMatch => self.say(|tr| tr.invoke_fp_failed()),
+            FpOutcome::TimedOut => self.say(|tr| tr.invoke_fp_timed_out()),
+            FpOutcome::Failed(e) => self.fp_error_text(&e),
+        };
+        self.fp_show(2, &text);
+    }
+
+    /// Updates the settings switch for the open vault (keyring search off
+    /// the UI thread).
+    fn refresh_fp_enabled(&self) {
+        let ui = self.ui();
+        ui.set_fp_enabled(false);
+        let Some(id) = self.vault.as_ref().map(|v| v.meta().id.clone()) else {
+            return;
+        };
+        if matches!(
+            self.fp_support,
+            Availability::Unsupported | Availability::NoReader
+        ) {
+            return;
+        }
+        std::thread::spawn(move || {
+            let on = biometric::is_enabled(&id).unwrap_or(false);
+            let _ = slint::invoke_from_event_loop(move || {
+                with_app(|app| {
+                    if app.vault.as_ref().is_some_and(|v| v.meta().id == id) {
+                        app.ui().set_fp_enabled(on);
+                    }
+                })
+            });
+        });
+    }
+
+    /// Settings switch: stores the open vault's key in the keyring, or
+    /// removes it. May show the keyring's unlock prompt, so off the UI thread.
+    fn set_fingerprint(&mut self, on: bool) {
+        let Some(vault) = &self.vault else {
+            return;
+        };
+        let meta = vault.meta().clone();
+        let key = on.then(|| vault.key().clone());
+        self.ui().set_fp_toggle_busy(true);
+        std::thread::spawn(move || {
+            let result = match &key {
+                Some(key) => biometric::enable(&meta, key),
+                None => biometric::disable(&meta.id),
+            };
+            drop(key);
+            let _ = slint::invoke_from_event_loop(move || {
+                with_app(|app| {
+                    let ui = app.ui();
+                    ui.set_fp_toggle_busy(false);
+                    match result {
+                        Ok(()) => {
+                            if app.vault.as_ref().is_some_and(|v| v.meta().id == meta.id) {
+                                ui.set_fp_enabled(on);
+                            }
+                            let text = app.say(|tr| {
+                                if on {
+                                    tr.invoke_fp_on()
+                                } else {
+                                    tr.invoke_fp_off()
+                                }
+                            });
+                            app.toast(&text);
+                        }
+                        Err(e) => {
+                            let text = app.fp_error_text(&e);
+                            app.toast(&text);
+                        }
+                    }
+                })
+            });
+        });
     }
 
     // ---------- entries ----------
@@ -984,10 +1232,15 @@ impl App {
             return;
         }
         let name = verified.meta().name.clone();
+        let id = verified.meta().id.clone();
         if let Err(e) = store.delete_vault(verified) {
             ui.set_vault_dialog_error(self.error_text(&e).into());
             return;
         }
+        // Its key in the keyring opens nothing any more.
+        std::thread::spawn(move || {
+            let _ = biometric::disable(&id);
+        });
         self.lock();
         ui.set_vault_index(0);
         self.load_vaults();
@@ -1155,17 +1408,6 @@ fn folder_fields(folder: Option<&Folder>) -> (SharedString, SharedString, slint:
     }
 }
 
-fn lock_timeout_from_env() -> Option<Duration> {
-    match std::env::var("VYKEY_LOCK_TIMEOUT") {
-        Ok(v) => match format::parse_duration(&v) {
-            Some(d) if d.is_zero() => None,
-            Some(d) => Some(d),
-            None => Some(DEFAULT_LOCK_TIMEOUT),
-        },
-        Err(_) => Some(DEFAULT_LOCK_TIMEOUT),
-    }
-}
-
 /// `Theme.mode` index in theme.slint.
 fn theme_index(mode: ThemeMode) -> i32 {
     match mode {
@@ -1301,7 +1543,7 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
             selected: None,
             deleting: None,
             last_activity: Instant::now(),
-            lock_timeout: lock_timeout_from_env(),
+            lock_timeout: vykey_core::settings::lock_timeout_from_env(),
             clipboard: None,
             copied: None,
             toast_until: None,
@@ -1309,9 +1551,28 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
             fx_timer: Timer::default(),
             settings,
             settings_path,
+            fp_support: Availability::Unsupported,
+            fp_cancel: None,
+            fp_round: 0,
         });
     });
     with_app(App::load_vaults);
+    // A D-Bus round trip (and maybe starting fprintd): off the UI thread.
+    std::thread::spawn(|| {
+        let support = biometric::availability();
+        let _ = slint::invoke_from_event_loop(move || {
+            with_app(|app| {
+                app.fp_support = support;
+                app.ui().set_fp_support(match support {
+                    Availability::Ready => 2,
+                    Availability::NoFingers => 1,
+                    Availability::NoReader | Availability::Unsupported => 0,
+                });
+                app.start_fingerprint();
+                app.refresh_fp_enabled();
+            })
+        });
+    });
     if let Some(err) = store_error {
         ui.set_unlock_error(err.into());
     }
@@ -1362,6 +1623,14 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
 
     ui.on_unlock(|name, pw| with_app(|app| app.start_unlock(&name, pw)));
     ui.on_create_vault(|name, pw| with_app(|app| app.start_create(&name, pw)));
+    ui.on_fp_retry(|| with_app(App::start_fingerprint));
+    ui.on_unlock_context_changed(|| with_app(App::start_fingerprint));
+    ui.on_set_fingerprint(|on| {
+        with_app(|app| {
+            app.touch();
+            app.set_fingerprint(on);
+        })
+    });
     ui.on_lock(|| with_app(App::lock));
     ui.on_activity(|| with_app(App::touch));
     ui.on_navigate(|page| {
@@ -1527,6 +1796,9 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
 /// Wipes secrets (key, entries, our clipboard content) and drops the state.
 pub fn shutdown() {
     APP.with_borrow_mut(|app| {
+        if let Some((cancel, _)) = app.as_mut().and_then(|a| a.fp_cancel.take()) {
+            cancel.cancel();
+        }
         if let Some(app) = app.as_mut()
             && let Some((_, value)) = &app.copied
             && let Some(cb) = app.clipboard.as_mut()
