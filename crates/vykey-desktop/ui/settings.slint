@@ -1,6 +1,6 @@
 // Settings screen: header + cards, like the security screen. Sections are
 // added here as settings grow: appearance (theme, language), security
-// (fingerprint unlock).
+// (auto-lock, fingerprint unlock).
 
 import { Theme, Icons } from "theme.slint";
 import { Icon, Card, Divider } from "components.slint";
@@ -287,6 +287,12 @@ export component SettingsMain inherits VerticalLayout {
     in property <int> language-mode;
     in property <[string]> language-names;
     callback set-language(int);
+    // Auto-lock delay: names built in Rust (LOCK_PRESETS in lib.rs);
+    // lock-env = overridden by VYKEY_LOCK_TIMEOUT.
+    in property <[string]> lock-names;
+    in property <int> lock-index;
+    in property <bool> lock-env;
+    callback set-lock-timeout(int);
     // Fingerprint unlock (see app.slint): 0 = no reader, 1 = no fingers, 2 = ready.
     in property <string> vault-name;
     in property <int> fp-support;
@@ -363,25 +369,43 @@ export component SettingsMain inherits VerticalLayout {
     }
 
     // Security
-    if root.fp-support != 0: VerticalLayout {
+    VerticalLayout {
         spacing: 8px;
         max-width: 760px;
 
         SectionTitle { text: @tr("SECURITY"); }
 
         Card {
-            SettingRow {
-                title: @tr("Unlock with fingerprint");
-                hint: root.fp-support == 1
-                    ? @tr("Enroll a fingerprint in the system settings first")
-                    : @tr("Open “{0}” with a finger instead of the master password. Its key is kept in the system keyring", root.vault-name);
+            VerticalLayout {
+                SettingRow {
+                    title: @tr("Auto-lock");
+                    hint: root.lock-env
+                        ? @tr("Set by the VYKEY_LOCK_TIMEOUT environment variable")
+                        : @tr("Lock the vault after this long without activity");
 
-                Switch {
-                    label: @tr("Unlock with fingerprint");
-                    checked: root.fp-enabled;
-                    // Turning it off always works, even without fingers.
-                    enabled: !root.fp-toggle-busy && (root.fp-support == 2 || root.fp-enabled);
-                    toggled(on) => { root.set-fingerprint(on); }
+                    Dropdown {
+                        label: @tr("Auto-lock");
+                        options: root.lock-names;
+                        selected: root.lock-index;
+                        picked(i) => { root.set-lock-timeout(i); }
+                    }
+                }
+
+                if root.fp-support != 0: Divider { }
+
+                if root.fp-support != 0: SettingRow {
+                    title: @tr("Unlock with fingerprint");
+                    hint: root.fp-support == 1
+                        ? @tr("Enroll a fingerprint in the system settings first")
+                        : @tr("Open “{0}” with a finger instead of the master password. Its key is kept in the system keyring", root.vault-name);
+
+                    Switch {
+                        label: @tr("Unlock with fingerprint");
+                        checked: root.fp-enabled;
+                        // Turning it off always works, even without fingers.
+                        enabled: !root.fp-toggle-busy && (root.fp-support == 2 || root.fp-enabled);
+                        toggled(on) => { root.set-fingerprint(on); }
+                    }
                 }
             }
         }

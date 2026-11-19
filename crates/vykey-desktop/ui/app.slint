@@ -18,7 +18,7 @@ export enum Screen { unlock, main }
 
 export component AppWindow inherits Window {
     title: "vykey";
-    icon: @image-url("icons/shield-halved.svg");
+    icon: @image-url("logo/window-icon.png");
     preferred-width: 1280px;
     preferred-height: 820px;
     min-width: 1000px;
@@ -75,6 +75,11 @@ export component AppWindow inherits Window {
     in property <int> language-mode;
     in property <[string]> language-names;
     callback set-language(int);
+    // Auto-lock delay (see SettingsMain).
+    in property <[string]> lock-names;
+    in property <int> lock-index;
+    in property <bool> lock-env;
+    callback set-lock-timeout(int);
     // Fingerprint unlock of the open vault: fp-support 0 = no reader (row
     // hidden), 1 = reader without enrolled fingers, 2 = ready.
     in property <int> fp-support;
@@ -249,6 +254,10 @@ export component AppWindow inherits Window {
                 language-mode: root.language-mode;
                 language-names: root.language-names;
                 set-language(l) => { root.set-language(l); }
+                lock-names: root.lock-names;
+                lock-index: root.lock-index;
+                lock-env: root.lock-env;
+                set-lock-timeout(i) => { root.set-lock-timeout(i); }
                 vault-name: root.vault-name;
                 fp-support: root.fp-support;
                 fp-enabled: root.fp-enabled;

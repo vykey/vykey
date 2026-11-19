@@ -37,6 +37,12 @@ export global Tr {
     public pure function copy-failed() -> string { @tr("Could not copy") }
     public pure function settings-save-failed() -> string { @tr("Could not save settings") }
 
+    // ---- auto-lock ----
+    public pure function lock-seconds(n: int) -> string { @tr("{n} second" | "{n} seconds" % n) }
+    public pure function lock-minutes(n: int) -> string { @tr("{n} minute" | "{n} minutes" % n) }
+    public pure function lock-hours(n: int) -> string { @tr("{n} hour" | "{n} hours" % n) }
+    public pure function lock-never() -> string { @tr("Never") }
+
     // ---- fingerprint ----
     // Finger names follow vykey_biometric::Finger, 0 = left thumb … 9 = right little finger.
     public pure function finger(index: int) -> string {

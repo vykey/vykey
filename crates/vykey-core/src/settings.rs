@@ -22,16 +22,37 @@ pub enum ThemeMode {
 }
 
 /// Every field has a default, so a missing, partial or newer file still loads.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
     pub theme: ThemeMode,
     /// Interface language code ("en", "ru", …); `None` follows the system
     /// locale. Codes the app does not know fall back to English.
     pub language: Option<String>,
+    /// Auto-lock after this many seconds without activity; 0 = never.
+    /// `VYKEY_LOCK_TIMEOUT` overrides it (see [`Settings::lock_timeout`]).
+    pub lock_timeout: u64,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            theme: ThemeMode::default(),
+            language: None,
+            lock_timeout: DEFAULT_LOCK_TIMEOUT.as_secs(),
+        }
+    }
 }
 
 impl Settings {
+    /// Effective auto-lock delay: `VYKEY_LOCK_TIMEOUT` if set and valid,
+    /// else the saved one. `None` = never lock.
+    pub fn lock_timeout(&self) -> Option<Duration> {
+        lock_timeout_from_env().unwrap_or_else(|| {
+            (self.lock_timeout > 0).then(|| Duration::from_secs(self.lock_timeout))
+        })
+    }
+
     /// Reads `path`. A missing or unreadable file yields the defaults: bad
     /// preferences must never keep the app from starting.
     pub fn load(path: &Path) -> Self {
@@ -53,24 +74,18 @@ impl Settings {
     }
 }
 
-/// Environment variable with the auto-lock delay (Go duration syntax).
+/// Environment variable overriding the saved auto-lock delay (Go duration
+/// syntax, "0" = never).
 pub const LOCK_TIMEOUT_ENV: &str = "VYKEY_LOCK_TIMEOUT";
 
-/// Auto-lock delay when `VYKEY_LOCK_TIMEOUT` is not set.
+/// Auto-lock delay of a fresh install.
 pub const DEFAULT_LOCK_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
-/// Auto-lock delay from `VYKEY_LOCK_TIMEOUT`: `None` = never lock ("0"),
-/// unset or unparsable = [`DEFAULT_LOCK_TIMEOUT`].
-pub fn lock_timeout_from_env() -> Option<Duration> {
-    match env::var(LOCK_TIMEOUT_ENV)
-        .ok()
-        .as_deref()
-        .map(parse_duration)
-    {
-        Some(Some(d)) if d.is_zero() => None,
-        Some(Some(d)) => Some(d),
-        _ => Some(DEFAULT_LOCK_TIMEOUT),
-    }
+/// Auto-lock delay from `VYKEY_LOCK_TIMEOUT`: `None` = not set or not
+/// parsable (the saved setting applies), `Some(None)` = never lock ("0").
+pub fn lock_timeout_from_env() -> Option<Option<Duration>> {
+    let d = parse_duration(&env::var(LOCK_TIMEOUT_ENV).ok()?)?;
+    Some((!d.is_zero()).then_some(d))
 }
 
 /// Parses Go-style durations as in `VYKEY_LOCK_TIMEOUT`: "30s", "5m", "1h30m", "0".
@@ -119,6 +134,7 @@ mod tests {
         let s = Settings {
             theme: ThemeMode::Dark,
             language: Some("ru".into()),
+            lock_timeout: 900,
         };
         s.save(&path).unwrap();
         assert_eq!(Settings::load(&path), s);
@@ -147,6 +163,21 @@ mod tests {
 
         fs::write(&path, "{}").unwrap();
         assert_eq!(Settings::load(&path), Settings::default());
+        assert_eq!(Settings::load(&path).lock_timeout, 300);
+    }
+
+    #[test]
+    fn saved_lock_timeout() {
+        // Only meaningful without VYKEY_LOCK_TIMEOUT in the environment.
+        if env::var_os(LOCK_TIMEOUT_ENV).is_some() {
+            return;
+        }
+        let mut s = Settings::default();
+        assert_eq!(s.lock_timeout(), Some(DEFAULT_LOCK_TIMEOUT));
+        s.lock_timeout = 60;
+        assert_eq!(s.lock_timeout(), Some(Duration::from_secs(60)));
+        s.lock_timeout = 0;
+        assert_eq!(s.lock_timeout(), None);
     }
 
     #[test]

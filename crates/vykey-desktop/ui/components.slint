@@ -488,21 +488,38 @@ export component InitialsAvatar inherits Rectangle {
     }
 }
 
-// Gradient logo tile with shield (unlock screen, sidebar).
-export component LogoMark inherits Rectangle {
-    in property <length> size: 34px;
+// App logo: the 34 px tile of the sidebar, or with `large` the 60 px logo
+// of the unlock screen (tile in the dark theme, bare mark in the light one).
+// The software renderer scales bitmaps without filtering, so every size is a
+// PNG pre-rendered at exactly that size (@2x for HiDPI, see Theme.hidpi),
+// made from assets/logo/vykey-{appicon-glossy-*,mark-glossy}-1024.png.
+export component LogoMark inherits Image {
+    in property <bool> large: false;
 
-    width: root.size;
-    height: root.size;
-    border-radius: root.size * 0.3;
-    background: Theme.logo-gradient;
+    width: root.large ? 60px : 34px;
+    height: self.width;
+    image-fit: contain;
+    source: root.large
+        ? (Theme.dark
+            ? (Theme.hidpi ? @image-url("logo/appicon-dark-60@2x.png") : @image-url("logo/appicon-dark-60@1x.png"))
+            : (Theme.hidpi ? @image-url("logo/mark-60@2x.png") : @image-url("logo/mark-60@1x.png")))
+        : (Theme.dark
+            ? (Theme.hidpi ? @image-url("logo/appicon-dark-34@2x.png") : @image-url("logo/appicon-dark-34@1x.png"))
+            : (Theme.hidpi ? @image-url("logo/appicon-light-34@2x.png") : @image-url("logo/appicon-light-34@1x.png")));
+    accessible-role: image;
+    accessible-label: "vykey";
+}
 
-    Icon {
-        source: Icons.shield-halved;
-        width: root.size * 0.5;
-        height: root.size * 0.5;
-        colorize: #FFFFFF;
-    }
+// "vykey" wordmark (sidebar), from assets/logo/vykey-wordmark-brand.svg.
+export component Wordmark inherits Image {
+    in property <length> height-px: 20px;
+
+    height: root.height-px;
+    width: root.height-px * 1359.6 / 388.8;
+    image-fit: contain;
+    source: @image-url("logo/wordmark.svg");
+    accessible-role: image;
+    accessible-label: "vykey";
 }
 
 export component Card inherits Rectangle {
