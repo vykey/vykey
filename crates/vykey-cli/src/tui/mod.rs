@@ -11,6 +11,7 @@ use ratatui::crossterm::event::{self, Event, KeyEventKind};
 use vykey_core::Store;
 
 use app::App;
+pub use app::MIN_PASSWORD_LEN;
 
 /// Redraw interval while idle: TOTP countdown, notices, auto-lock.
 const TICK: Duration = Duration::from_millis(250);

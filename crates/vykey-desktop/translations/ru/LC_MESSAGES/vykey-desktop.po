@@ -924,3 +924,41 @@ msgstr[2] "{n} часов"
 
 msgid "Never"
 msgstr "Никогда"
+
+# ---- master password change ----
+
+msgid "Change master password…"
+msgstr "Сменить мастер-пароль…"
+
+msgid "Change master password"
+msgstr "Смена мастер-пароля"
+
+msgid "Use the new password from now on. Fingerprint unlock keeps working; an old copy of the database still opens with the old password."
+msgstr "Дальше используйте новый пароль. Вход по отпечатку продолжит работать; старая копия базы по-прежнему открывается старым паролем."
+
+msgid "Current master password"
+msgstr "Текущий мастер-пароль"
+
+msgid "New master password"
+msgstr "Новый мастер-пароль"
+
+msgid "Enter the current master password"
+msgstr "Введите текущий мастер-пароль"
+
+msgid "The new password is the same as the current one"
+msgstr "Новый пароль совпадает с текущим"
+
+msgid "Changing…"
+msgstr "Меняем…"
+
+msgid "Change password"
+msgstr "Сменить пароль"
+
+msgid "Master password changed"
+msgstr "Мастер-пароль изменён"
+
+msgid "Change the password of “{0}”. Entries are not re-encrypted"
+msgstr "Сменить пароль хранилища «{0}». Записи не перешифровываются"
+
+msgid "Change…"
+msgstr "Сменить…"

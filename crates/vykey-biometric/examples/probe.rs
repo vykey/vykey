@@ -18,6 +18,7 @@ fn main() -> Result<(), Error> {
                 name: "probe".into(),
                 salt: Vec::new(),
                 verifier: Vec::new(),
+                wrapped_key: None,
                 created_at: 0,
                 updated_at: 0,
             };

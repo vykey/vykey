@@ -7,8 +7,6 @@
 
 # vykey
 
-# vykey
-
 **vykey** (*Vault Your Keys*) is a local password manager written in Rust: a
 native desktop app ([Slint](https://slint.dev), no web view, no JS) and a
 terminal client, `vy`, working on the same encrypted vault file.
@@ -21,7 +19,7 @@ upgrades them in place — see [docs/vault-format.md](docs/vault-format.md) and
 ## Features
 
 - Several vaults in one database, each with its own master password:
-  create, switch, rename, delete
+  create, switch, rename, change the master password, delete
 - Logins, payment cards (Luhn check, payment system, expiry warnings) and
   secure notes; favourites and coloured folders
 - Everything except timestamps is encrypted, titles included
@@ -67,6 +65,7 @@ vy import bitwarden.csv             # import a Bitwarden CSV export
 vy import bitwarden.csv --vault Work --folder Work
 vy fingerprint enable --vault Work  # fingerprint unlock (see below)
 vy fingerprint status
+vy passwd --vault Work              # change the master password
 ```
 
 `vy import` asks for the master password (it is never a command-line

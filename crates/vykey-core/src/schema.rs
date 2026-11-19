@@ -15,6 +15,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0002_entries_vault_id.sql"),
     include_str!("../migrations/0003_entry_data.sql"),
     include_str!("../migrations/0004_folders.sql"),
+    include_str!("../migrations/0005_wrapped_key.sql"),
 ];
 
 /// Latest schema version this crate understands.
@@ -36,6 +37,18 @@ fn table_exists(conn: &Connection, name: &str) -> Result<bool> {
         )
         .optional()?
         .is_some())
+}
+
+/// Schema version of the database; 0 for a new (empty) one.
+pub fn version(conn: &Connection) -> Result<i64> {
+    if !table_exists(conn, "goose_db_version")? {
+        return Ok(0);
+    }
+    Ok(conn.query_row(
+        "SELECT COALESCE(MAX(version_id), 0) FROM goose_db_version WHERE is_applied = 1",
+        [],
+        |r| r.get(0),
+    )?)
 }
 
 /// Brings the database to [`SCHEMA_VERSION`] and refuses databases written

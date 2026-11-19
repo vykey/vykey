@@ -1187,6 +1187,11 @@ impl App {
                 ui.set_vault_dialog(1);
             }
             3 => {
+                ui.set_vault_dialog_error("".into());
+                ui.set_vault_dialog_busy(false);
+                ui.set_vault_dialog(3);
+            }
+            4 => {
                 let count = match (&self.store, &self.vault) {
                     (Some(store), Some(vault)) => store.entry_count(&vault.meta().id).unwrap_or(0),
                     _ => 0,
@@ -1212,6 +1217,40 @@ impl App {
                 ui.set_vault_dialog(0);
                 self.load_vaults();
                 self.toast(&self.say(|tr| tr.invoke_vault_renamed()));
+            }
+            Err(e) => ui.set_vault_dialog_error(self.error_text(&e).into()),
+        }
+    }
+
+    /// Checks the current password and wraps the vault key under the new
+    /// one (two Argon2 runs on a worker thread), then saves it.
+    fn start_change_password(&mut self, current: SharedString, new: SharedString) {
+        let Some(change) = self.vault.as_ref().map(Vault::password_change) else {
+            return;
+        };
+        let ui = self.ui();
+        ui.set_vault_dialog_busy(true);
+        ui.set_vault_dialog_error("".into());
+        std::thread::spawn(move || {
+            let result = change.prepare(current.as_str(), new.as_str());
+            drop((current, new));
+            let _ = slint::invoke_from_event_loop(move || {
+                with_app(|app| app.finish_change_password(result))
+            });
+        });
+    }
+
+    fn finish_change_password(&mut self, result: vykey_core::Result<vykey_core::KeyWrap>) {
+        let ui = self.ui();
+        ui.set_vault_dialog_busy(false);
+        // Locked meanwhile: nothing to save to.
+        let (Some(store), Some(vault)) = (&self.store, self.vault.as_mut()) else {
+            return;
+        };
+        match result.and_then(|wrap| store.change_password(vault, wrap)) {
+            Ok(()) => {
+                ui.set_vault_dialog(0);
+                self.toast(&self.say(|tr| tr.invoke_password_changed()));
             }
             Err(e) => ui.set_vault_dialog_error(self.error_text(&e).into()),
         }
@@ -1830,6 +1869,12 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
         with_app(|app| {
             app.touch();
             app.rename_vault(&name);
+        })
+    });
+    ui.on_change_password(|current, new| {
+        with_app(|app| {
+            app.touch();
+            app.start_change_password(current, new);
         })
     });
     ui.on_delete_vault(|password| {

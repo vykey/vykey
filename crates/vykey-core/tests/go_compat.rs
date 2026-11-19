@@ -117,3 +117,39 @@ fn reads_go_multi_vault_database() {
     let gitlab = &store.list_entries(&work).unwrap()[0];
     assert_eq!(gitlab.password.as_deref(), Some("w0rk-Pa55!"));
 }
+
+/// A Go vault has no wrapped key (the password key is the data key). Opening
+/// it backs the database up first; a password change then wraps that same
+/// key, so the entries stay readable without being re-encrypted.
+#[test]
+fn legacy_vault_password_change() {
+    use vykey_core::{Store, Vault};
+    let (dir, path) = fixture_copy();
+    let store = Store::open(&path).unwrap();
+    assert!(dir.path().join("vykey.db.bak-v1").exists());
+
+    let meta = store.vault_meta("fixture").unwrap();
+    assert!(meta.wrapped_key.is_none());
+    let mut vault = Vault::unlock(meta, "correct horse").unwrap();
+    let old_key = vault.key().clone();
+
+    let change = vault.password_change();
+    assert!(matches!(
+        vault.password_change().prepare("wrong", "new password"),
+        Err(vykey_core::Error::WrongPassword)
+    ));
+    let wrap = change.prepare("correct horse", "new password").unwrap();
+    store.change_password(&mut vault, wrap).unwrap();
+    drop(store);
+
+    let store = Store::open(&path).unwrap();
+    let meta = store.vault_meta("fixture").unwrap();
+    assert!(meta.wrapped_key.is_some());
+    assert!(Vault::unlock(meta.clone(), "correct horse").is_err());
+    let vault = Vault::unlock(meta.clone(), "new password").unwrap();
+    assert_eq!(vault.key().as_slice(), old_key.as_slice());
+    let entries = store.list_entries(&vault).unwrap();
+    assert_eq!(entries[1].password.as_deref(), Some("gh-Pa55!word"));
+    // A key kept for fingerprint unlock still opens it.
+    Vault::unlock_with_key(meta, old_key).unwrap();
+}
