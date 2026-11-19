@@ -1,0 +1,364 @@
+// Unlock screen, plus the "create vault" variant built from the same card,
+// fields and tokens.
+
+import { Theme, Icons } from "theme.slint";
+import { Field, PrimaryButton, LinkText, LogoMark, InitialsAvatar, StrengthMeter, Backend, Icon, FieldLabel } from "components.slint";
+
+export struct VaultItem {
+    name: string,
+    initials: string,
+}
+
+component Glow inherits Rectangle {
+    in property <color> tint;
+    background: @radial-gradient(circle, root.tint 0%, root.tint.transparentize(1) 50%);
+}
+
+component UnlockForm inherits VerticalLayout {
+    in property <[VaultItem]> vaults;
+    in-out property <int> vault-index;
+    in property <bool> busy;
+    in-out property <string> error;
+    callback submit(string, string);
+
+    property <VaultItem> current: root.vaults[root.vault-index];
+
+    function go() {
+        if !root.busy && pw.text != "" {
+            root.submit(root.current.name, pw.text);
+        }
+    }
+
+    spacing: 16px;
+    init => { pw.focus(); }
+
+    // Selected vault
+    HorizontalLayout {
+        alignment: center;
+
+        Rectangle {
+            border-radius: 999px;
+            background: pill-ta.has-hover && root.vaults.length > 1 ? Theme.border-subtle : Theme.bg-hover;
+
+            HorizontalLayout {
+                padding-top: 5px;
+                padding-bottom: 5px;
+                padding-left: 5px;
+                padding-right: 14px;
+                spacing: 8px;
+
+                InitialsAvatar {
+                    size: 22px;
+                    font-size: 10px;
+                    initials: root.current.initials;
+                }
+
+                Text {
+                    text: root.current.name;
+                    font-size: 13px;
+                    font-weight: 500;
+                    color: Theme.text-primary;
+                    vertical-alignment: center;
+                }
+
+                if root.vaults.length > 1: Icon {
+                    source: Icons.sort;
+                    size: 11px;
+                }
+            }
+
+            pill-ta := TouchArea {
+                enabled: root.vaults.length > 1;
+                mouse-cursor: self.enabled ? pointer : default;
+                clicked => { vault-menu.show(); }
+            }
+
+            vault-menu := PopupWindow {
+                x: 0;
+                y: parent.height + 6px;
+                width: max(220px, parent.width);
+
+                Rectangle {
+                    background: Theme.bg-elevated;
+                    border-radius: 12px;
+                    border-width: 1px;
+                    border-color: Theme.border-subtle;
+                    drop-shadow-color: Theme.shadow-modal;
+                    drop-shadow-blur: 24px;
+                    drop-shadow-offset-y: 8px;
+
+                    VerticalLayout {
+                        padding: 6px;
+
+                        for vault[i] in root.vaults: Rectangle {
+                            border-radius: 8px;
+                            background: item-ta.has-hover ? Theme.bg-hover : transparent;
+
+                            HorizontalLayout {
+                                padding-left: 8px;
+                                padding-right: 10px;
+                                padding-top: 6px;
+                                padding-bottom: 6px;
+                                spacing: 8px;
+
+                                InitialsAvatar {
+                                    size: 22px;
+                                    font-size: 10px;
+                                    initials: vault.initials;
+                                }
+                                Text {
+                                    horizontal-stretch: 1;
+                                    text: vault.name;
+                                    font-size: 13px;
+                                    font-weight: i == root.vault-index ? 600 : 500;
+                                    color: i == root.vault-index ? Theme.accent : Theme.text-primary;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            item-ta := TouchArea {
+                                clicked => {
+                                    root.vault-index = i;
+                                    root.error = "";
+                                    pw.focus();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Password field
+    pw := Field {
+        password: true;
+        mono: true;
+        font-size: 15px;
+        revealable: true;
+        has-icon: true;
+        icon: Icons.lock;
+        pad-y: 13px;
+        pad-x: 14px;
+        placeholder: @tr("Master password");
+        label: @tr("Master password");
+        invalid: root.error != "";
+        edited => { root.error = ""; }
+        accepted => { root.go(); }
+    }
+
+    if root.error != "": Text {
+        text: root.error;
+        color: Theme.danger;
+        font-size: 12px;
+        wrap: word-wrap;
+        horizontal-alignment: center;
+    }
+
+    // Unlock button
+    PrimaryButton {
+        text: root.busy ? @tr("Checking…") : @tr("Unlock");
+        enabled: !root.busy;
+        pad-y: 13px;
+        font-size: 15px;
+        clicked => { root.go(); }
+    }
+}
+
+component CreateForm inherits VerticalLayout {
+    in property <bool> busy;
+    in-out property <string> error;
+    callback submit(string, string);
+
+    function go() {
+        if root.busy {
+            return;
+        }
+        if name.text == "" {
+            root.error = @tr("Enter a vault name");
+            name.focus();
+        } else if pw.text.character-count < 8 {
+            root.error = @tr("The master password must be at least 8 characters long");
+            pw.focus();
+        } else if pw.text != pw2.text {
+            root.error = @tr("Passwords do not match");
+            pw2.focus();
+        } else {
+            root.error = "";
+            root.submit(name.text, pw.text);
+        }
+    }
+
+    spacing: 14px;
+    init => { name.focus(); }
+
+    VerticalLayout {
+        spacing: 6px;
+        FieldLabel { text: @tr("Vault name"); }
+        name := Field {
+            placeholder: @tr("e.g. Personal");
+            label: @tr("Vault name");
+            edited => { root.error = ""; }
+            accepted => { pw.focus(); }
+        }
+    }
+
+    VerticalLayout {
+        spacing: 6px;
+        FieldLabel { text: @tr("Master password"); }
+        pw := Field {
+            password: true;
+            mono: true;
+            revealable: true;
+            placeholder: @tr("At least 8 characters");
+            label: @tr("Master password");
+            edited => { root.error = ""; }
+            accepted => { pw2.focus(); }
+        }
+        StrengthMeter {
+            bars: Backend.password-strength(pw.text);
+        }
+    }
+
+    VerticalLayout {
+        spacing: 6px;
+        FieldLabel { text: @tr("Repeat password"); }
+        pw2 := Field {
+            password: true;
+            mono: true;
+            placeholder: @tr("Master password again");
+            label: @tr("Repeat master password");
+            invalid: pw2.text != "" && pw2.text != pw.text;
+            edited => { root.error = ""; }
+            accepted => { root.go(); }
+        }
+    }
+
+    if root.error != "": Text {
+        text: root.error;
+        color: Theme.danger;
+        font-size: 12px;
+        wrap: word-wrap;
+        horizontal-alignment: center;
+    }
+
+    PrimaryButton {
+        text: root.busy ? @tr("Creating…") : @tr("Create vault");
+        enabled: !root.busy;
+        pad-y: 13px;
+        font-size: 15px;
+        clicked => { root.go(); }
+    }
+}
+
+export component UnlockScreen inherits Rectangle {
+    in property <[VaultItem]> vaults;
+    in-out property <int> vault-index: 0;
+    in property <bool> busy: false;
+    in-out property <string> error;
+    in-out property <bool> create-mode: false;
+
+    callback unlock(string /* vault */, string /* password */);
+    callback create(string /* name */, string /* password */);
+
+    property <bool> creating: root.create-mode || root.vaults.length == 0;
+
+    background: Theme.bg-base;
+    clip: true;
+
+    // Background glow
+    Glow {
+        x: parent.width - 620px;
+        y: -260px;
+        width: 900px;
+        height: 620px;
+        tint: #6A58F055;
+    }
+
+    Glow {
+        x: -260px;
+        y: parent.height - 380px;
+        width: 760px;
+        height: 560px;
+        tint: #3DD68C2E;
+    }
+
+    // Card
+    Rectangle {
+        width: 400px;
+        height: card-layout.preferred-height;
+        x: (parent.width - self.width) / 2;
+        y: max(24px, (parent.height - self.height) / 2 - 24px);
+        border-radius: 24px;
+        background: Theme.bg-elevated;
+        border-width: 1px;
+        border-color: Theme.border-subtle;
+        drop-shadow-color: Theme.shadow-modal;
+        drop-shadow-offset-y: 24px;
+        drop-shadow-blur: 64px;
+
+        card-layout := VerticalLayout {
+            padding-top: 36px;
+            padding-right: 32px;
+            padding-bottom: 28px;
+            padding-left: 32px;
+            spacing: 16px;
+
+            HorizontalLayout {
+                alignment: center;
+                LogoMark {
+                    size: 60px;
+                }
+            }
+
+            Text {
+                text: root.creating ? @tr("New vault") : @tr("Welcome back");
+                horizontal-alignment: center;
+                font-size: 22px;
+                font-weight: 700;
+                color: Theme.text-primary;
+            }
+
+            Text {
+                text: root.creating
+                    ? @tr("Choose a master password. It cannot be recovered — keep it somewhere safe")
+                    : @tr("Enter your master password to open the vault");
+                horizontal-alignment: center;
+                wrap: word-wrap;
+                font-size: 13px;
+                color: Theme.text-secondary;
+            }
+
+            if !root.creating: UnlockForm {
+                vaults: root.vaults;
+                vault-index <=> root.vault-index;
+                busy: root.busy;
+                error <=> root.error;
+                submit(vault, password) => { root.unlock(vault, password); }
+            }
+
+            if root.creating: CreateForm {
+                busy: root.busy;
+                error <=> root.error;
+                submit(name, password) => { root.create(name, password); }
+            }
+
+            // No "forgot password" link: a master password cannot be recovered.
+            if root.vaults.length > 0: HorizontalLayout {
+                alignment: center;
+                padding-top: 4px;
+
+                LinkText {
+                    text: root.create-mode ? @tr("Back to unlock") : @tr("Create a new vault");
+                    font-size: 12px;
+                    font-weight: 500;
+                    color: Theme.text-tertiary;
+                    clicked => {
+                        root.create-mode = !root.create-mode;
+                        root.error = "";
+                    }
+                }
+            }
+        }
+    }
+}

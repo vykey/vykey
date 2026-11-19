@@ -1,0 +1,310 @@
+// Settings screen: header + cards, like the security screen. Sections are
+// added here as settings grow; for now: appearance (theme, language).
+
+import { Theme, Icons } from "theme.slint";
+import { Icon, Card, Divider } from "components.slint";
+
+// One segment of a segmented control: icon + label.
+component Segment inherits Rectangle {
+    in property <image> icon;
+    in property <string> text;
+    in property <bool> active;
+    callback clicked;
+
+    border-radius: 9px;
+    background: root.active ? Theme.bg-elevated : ta.has-hover ? Theme.bg-hover : transparent;
+    border-width: root.active ? 1px : 0;
+    border-color: Theme.border-subtle;
+    drop-shadow-color: root.active ? Theme.shadow-modal.with-alpha(0.12) : transparent;
+    drop-shadow-blur: 4px;
+    drop-shadow-offset-y: 1px;
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-checked: root.active;
+    accessible-action-default => { root.clicked(); }
+
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        padding-top: 7px;
+        padding-bottom: 7px;
+        spacing: 8px;
+        alignment: center;
+
+        Icon {
+            source: root.icon;
+            size: 13px;
+            colorize: root.active ? Theme.accent : Theme.text-tertiary;
+        }
+        Text {
+            text: root.text;
+            font-size: 13px;
+            font-weight: root.active ? 600 : 500;
+            color: root.active ? Theme.text-primary : Theme.text-secondary;
+            vertical-alignment: center;
+        }
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+struct SegmentOption {
+    icon: image,
+    text: string,
+}
+
+// Segmented control: one option out of a few.
+component Segmented inherits Rectangle {
+    in property <[SegmentOption]> options;
+    in property <int> selected;
+    callback picked(int);
+
+    border-radius: 11px;
+    background: Theme.bg-hover;
+    border-width: 1px;
+    border-color: Theme.border-subtle;
+
+    HorizontalLayout {
+        padding: 3px;
+        spacing: 2px;
+
+        for option[i] in root.options: Segment {
+            icon: option.icon;
+            text: option.text;
+            active: root.selected == i;
+            clicked => { root.picked(i); }
+        }
+    }
+}
+
+// One row of the Dropdown menu (same look as the folder menu).
+component DropdownOption inherits Rectangle {
+    in property <string> text;
+    in property <bool> selected;
+    callback clicked;
+
+    border-radius: 8px;
+    background: ta.has-hover ? Theme.bg-hover : transparent;
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-checked: root.selected;
+    accessible-action-default => { root.clicked(); }
+
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        padding-top: 8px;
+        padding-bottom: 8px;
+        spacing: 10px;
+
+        Text {
+            horizontal-stretch: 1;
+            text: root.text;
+            font-size: 13px;
+            font-weight: root.selected ? 600 : 500;
+            color: Theme.text-primary;
+            overflow: elide;
+            vertical-alignment: center;
+        }
+        if root.selected: Icon {
+            source: Icons.check;
+            size: 11px;
+            colorize: Theme.accent;
+        }
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// Field-styled dropdown for a list that grows (e.g. languages).
+component Dropdown inherits Rectangle {
+    in property <[string]> options;
+    in property <int> selected;
+    in property <string> label;
+    callback picked(int);
+
+    width: 220px;
+    border-radius: 10px;
+    background: Theme.bg-elevated;
+    border-width: 1px;
+    border-color: ta.has-hover ? Theme.text-tertiary.with-alpha(0.5) : Theme.border-subtle;
+    accessible-role: combobox;
+    accessible-label: root.label;
+    accessible-value: root.options[root.selected];
+    accessible-action-default => { menu.show(); }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-top: 9px;
+        padding-bottom: 9px;
+        spacing: 10px;
+
+        Text {
+            horizontal-stretch: 1;
+            text: root.options[root.selected];
+            font-size: 13px;
+            font-weight: 500;
+            color: Theme.text-primary;
+            overflow: elide;
+            vertical-alignment: center;
+        }
+        Icon {
+            source: Icons.angle-down;
+            size: 11px;
+        }
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { menu.show(); }
+    }
+
+    menu := PopupWindow {
+        x: 0;
+        y: root.height + 4px;
+        width: root.width;
+
+        Rectangle {
+            background: Theme.bg-elevated;
+            border-radius: 12px;
+            border-width: 1px;
+            border-color: Theme.border-subtle;
+            drop-shadow-color: Theme.shadow-modal;
+            drop-shadow-blur: 24px;
+            drop-shadow-offset-y: 8px;
+
+            VerticalLayout {
+                padding: 6px;
+
+                for option[i] in root.options: DropdownOption {
+                    text: option;
+                    selected: root.selected == i;
+                    clicked => { root.picked(i); }
+                }
+            }
+        }
+    }
+}
+
+// A row inside a settings card: title + hint on the left, control on the right.
+component SettingRow inherits HorizontalLayout {
+    in property <string> title;
+    in property <string> hint;
+
+    padding: 18px;
+    spacing: 24px;
+
+    VerticalLayout {
+        horizontal-stretch: 1;
+        alignment: center;
+        spacing: 3px;
+        Text {
+            text: root.title;
+            font-size: 14px;
+            font-weight: 600;
+            color: Theme.text-primary;
+        }
+        Text {
+            text: root.hint;
+            font-size: 12px;
+            color: Theme.text-tertiary;
+            wrap: word-wrap;
+        }
+    }
+    VerticalLayout {
+        alignment: center;
+        @children
+    }
+}
+
+component SectionTitle inherits Text {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    color: Theme.text-tertiary;
+}
+
+export component SettingsMain inherits VerticalLayout {
+    // 0 = system, 1 = light, 2 = dark
+    in property <int> theme-mode;
+    callback set-theme(int);
+    // Index into language-names: 0 = system, then LANGUAGES in lib.rs.
+    in property <int> language-mode;
+    in property <[string]> language-names;
+    callback set-language(int);
+
+    padding-top: 24px;
+    padding-bottom: 24px;
+    padding-left: 28px;
+    padding-right: 28px;
+    spacing: 18px;
+    alignment: start;
+
+    // Header
+    VerticalLayout {
+        spacing: 2px;
+        Text {
+            text: @tr("Settings");
+            font-size: 22px;
+            font-weight: 700;
+            color: Theme.text-primary;
+        }
+        Text {
+            text: @tr("Stored on this device");
+            font-size: 13px;
+            color: Theme.text-tertiary;
+        }
+    }
+
+    // Appearance
+    VerticalLayout {
+        spacing: 8px;
+        max-width: 760px;
+
+        SectionTitle { text: @tr("APPEARANCE"); }
+
+        Card {
+            VerticalLayout {
+                SettingRow {
+                    title: @tr("Theme");
+                    hint: root.theme-mode == 0
+                        ? @tr("Follows the system setting")
+                        : root.theme-mode == 1 ? @tr("Always light") : @tr("Always dark");
+
+                    Segmented {
+                        options: [
+                            { icon: Icons.desktop, text: @tr("System") },
+                            { icon: Icons.sun, text: @tr("Light") },
+                            { icon: Icons.moon, text: @tr("Dark") },
+                        ];
+                        selected: root.theme-mode;
+                        picked(i) => { root.set-theme(i); }
+                    }
+                }
+
+                Divider { }
+
+                SettingRow {
+                    title: @tr("Language");
+                    hint: root.language-mode == 0 ? @tr("Follows the system language") : @tr("Interface language");
+
+                    // "System", then the bundled languages, each named in
+                    // its own language (built in Rust, see LANGUAGES in lib.rs).
+                    Dropdown {
+                        label: @tr("Language");
+                        options: root.language-names;
+                        selected: root.language-mode;
+                        picked(i) => { root.set-language(i); }
+                    }
+                }
+            }
+        }
+    }
+}

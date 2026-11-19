@@ -1,0 +1,512 @@
+// Sidebar shared by the vault, security and settings screens.
+
+import { ScrollView } from "std-widgets.slint";
+import { Theme, Icons } from "theme.slint";
+import { Icon, NavItem, LogoMark, InitialsAvatar, IconAction, FolderItem, FolderDot } from "components.slint";
+
+// Folder row: dot, name, count. On hover the count gives way to "…"
+// (rename / delete), also opened with a right click.
+component FolderRow inherits Rectangle {
+    in property <FolderItem> folder;
+    in property <bool> active;
+    callback clicked;
+    // 0 = edit, 1 = delete
+    callback action(int);
+
+    border-radius: 10px;
+    background: root.active ? Theme.bg-elevated : ta.has-hover ? Theme.bg-hover : transparent;
+    border-width: root.active ? 1px : 0;
+    border-color: Theme.border-subtle;
+    accessible-role: button;
+    accessible-label: @tr("Folder {0}", root.folder.name);
+    accessible-action-default => { root.clicked(); }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 8px;
+        padding-top: 8px;
+        padding-bottom: 8px;
+        spacing: 12px;
+
+        VerticalLayout {
+            alignment: center;
+            FolderDot { tone: root.folder.color; }
+        }
+        Text {
+            horizontal-stretch: 1;
+            text: root.folder.name;
+            font-size: 14px;
+            font-weight: root.active ? 600 : 500;
+            color: root.active ? Theme.text-primary : Theme.text-secondary;
+            overflow: elide;
+            vertical-alignment: center;
+        }
+        Rectangle {
+            width: 22px;
+            if !ta.has-hover: Text {
+                width: 100%;
+                text: root.folder.count > 0 ? "\{root.folder.count}" : "";
+                font-size: 12px;
+                color: Theme.text-tertiary;
+                horizontal-alignment: right;
+                vertical-alignment: center;
+            }
+            if ta.has-hover: Icon {
+                source: Icons.ellipsis;
+                size: 13px;
+                colorize: ta.mouse-x >= root.width - 34px ? Theme.text-primary : Theme.text-tertiary;
+            }
+        }
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            if self.mouse-x >= root.width - 34px {
+                menu.show();
+            } else {
+                root.clicked();
+            }
+        }
+        pointer-event(e) => {
+            if e.button == PointerEventButton.right && e.kind == PointerEventKind.up {
+                menu.show();
+            }
+        }
+    }
+
+    menu := PopupWindow {
+        x: root.width - 190px;
+        y: root.height + 4px;
+        width: 190px;
+
+        Rectangle {
+            background: Theme.bg-elevated;
+            border-radius: 12px;
+            border-width: 1px;
+            border-color: Theme.border-subtle;
+            drop-shadow-color: Theme.shadow-modal;
+            drop-shadow-blur: 24px;
+            drop-shadow-offset-y: 8px;
+
+            VerticalLayout {
+                padding: 6px;
+
+                for action[i] in [
+                    { icon: Icons.pen, text: @tr("Edit…"), danger: false },
+                    { icon: Icons.trash, text: @tr("Delete folder…"), danger: true },
+                ]: Rectangle {
+                    border-radius: 8px;
+                    background: item-ta.has-hover ? Theme.bg-hover : transparent;
+
+                    HorizontalLayout {
+                        padding-left: 10px;
+                        padding-right: 10px;
+                        padding-top: 8px;
+                        padding-bottom: 8px;
+                        spacing: 10px;
+
+                        Icon {
+                            source: action.icon;
+                            size: 13px;
+                            colorize: action.danger ? Theme.danger : Theme.text-secondary;
+                        }
+                        Text {
+                            horizontal-stretch: 1;
+                            text: action.text;
+                            font-size: 13px;
+                            font-weight: 500;
+                            color: action.danger ? Theme.danger : Theme.text-primary;
+                        }
+                    }
+
+                    item-ta := TouchArea {
+                        clicked => { root.action(i); }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export enum Page { vault, security, settings }
+
+export component Sidebar inherits Rectangle {
+    in property <Page> page;
+    in property <int> entry-count;
+    in property <int> favorite-count;
+    in property <int> card-count;
+    in property <int> note-count;
+    // 0 = all, 1 = favourites, 2 = cards, 3 = notes, 4 = folder (on Page.vault)
+    in property <int> filter;
+    in property <[FolderItem]> folders;
+    // Folder shown when filter == 4.
+    in property <string> active-folder;
+    in property <int> issue-count;
+    in property <string> vault-name;
+    in property <string> vault-initials;
+    in property <string> vault-subtitle;
+    in-out property <string> query;
+    // Incremented by the window to move focus into the search field (Ctrl+K).
+    in property <int> search-focus-request;
+
+    callback navigate(Page);
+    callback select-filter(int);
+    callback select-folder(string);
+    callback new-folder();
+    // (folder id, 0 = edit / 1 = delete)
+    callback folder-action(string, int);
+    callback lock();
+    // 0 = switch vault, 1 = new vault, 2 = rename, 3 = delete
+    callback vault-action(int);
+    callback search-edited(string);
+
+    changed search-focus-request => {
+        search.focus();
+        search.select-all();
+    }
+
+    width: 264px;
+    background: Theme.bg-sidebar;
+
+    VerticalLayout {
+        padding-top: 20px;
+        padding-right: 14px;
+        padding-bottom: 16px;
+        padding-left: 14px;
+        spacing: 8px;
+
+        // Logo
+        HorizontalLayout {
+            padding-left: 6px;
+            padding-right: 6px;
+            padding-bottom: 12px;
+            spacing: 10px;
+
+            LogoMark { size: 34px; }
+            Text {
+                text: "vykey";
+                font-size: 19px;
+                font-weight: 700;
+                color: Theme.text-primary;
+                vertical-alignment: center;
+            }
+        }
+
+        // Search
+        Rectangle {
+            border-radius: 12px;
+            background: Theme.bg-elevated;
+            border-width: 1px;
+            border-color: search.has-focus ? Theme.accent : Theme.border-subtle;
+
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                spacing: 10px;
+
+                Icon {
+                    source: Icons.search;
+                    size: 15px;
+                }
+
+                Rectangle {
+                    horizontal-stretch: 1;
+                    min-height: 38px;
+
+                    search := TextInput {
+                        width: 100%;
+                        height: 100%;
+                        vertical-alignment: center;
+                        single-line: true;
+                        font-size: 14px;
+                        color: Theme.text-primary;
+                        text <=> root.query;
+                        selection-background-color: Theme.accent.with-alpha(0.35);
+                        selection-foreground-color: Theme.text-primary;
+                        accessible-label: @tr("Search");
+                        edited => { root.search-edited(self.text); }
+                        key-pressed(e) => {
+                            if e.text == Key.Escape {
+                                self.text = "";
+                                root.search-edited("");
+                                return accept;
+                            }
+                            reject
+                        }
+                    }
+
+                    if search.text == "": Text {
+                        width: 100%;
+                        height: 100%;
+                        vertical-alignment: center;
+                        text: @tr("Search");
+                        font-size: 14px;
+                        color: Theme.text-tertiary;
+                    }
+                }
+
+                // Shortcut hint
+                if search.text == "": VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        height: kbd.preferred-height + 6px;
+                        border-radius: 6px;
+                        background: Theme.bg-hover;
+
+                        HorizontalLayout {
+                            padding-left: 6px;
+                            padding-right: 6px;
+                            kbd := Text {
+                                text: "Ctrl K";
+                                font-size: 11px;
+                                color: Theme.text-tertiary;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+                if search.text != "": IconAction {
+                    icon: Icons.xmark;
+                    size: 11px;
+                    tooltip: @tr("Clear search");
+                    clicked => {
+                        root.query = "";
+                        root.search-edited("");
+                    }
+                }
+            }
+        }
+
+        // Navigation
+        VerticalLayout {
+            spacing: 2px;
+
+            NavItem {
+                icon: Icons.vault;
+                text: @tr("All items");
+                count: "\{root.entry-count}";
+                active: root.page == Page.vault && root.filter == 0;
+                clicked => { root.select-filter(0); }
+            }
+            // Favorites / cards / notes filters
+            NavItem {
+                icon: Icons.star;
+                text: @tr("Favorites");
+                count: root.favorite-count > 0 ? "\{root.favorite-count}" : "";
+                active: root.page == Page.vault && root.filter == 1;
+                clicked => { root.select-filter(1); }
+            }
+            NavItem {
+                icon: Icons.card;
+                text: @tr("Cards");
+                count: root.card-count > 0 ? "\{root.card-count}" : "";
+                active: root.page == Page.vault && root.filter == 2;
+                clicked => { root.select-filter(2); }
+            }
+            NavItem {
+                icon: Icons.note;
+                text: @tr("Notes");
+                count: root.note-count > 0 ? "\{root.note-count}" : "";
+                active: root.page == Page.vault && root.filter == 3;
+                clicked => { root.select-filter(3); }
+            }
+            NavItem {
+                icon: Icons.shield;
+                text: @tr("Security");
+                count: root.issue-count > 0 ? "\{root.issue-count}" : "";
+                active: root.page == Page.security;
+                clicked => { root.navigate(Page.security); }
+            }
+        }
+
+        // Folders
+        HorizontalLayout {
+            padding-top: 14px;
+            padding-left: 12px;
+            padding-right: 4px;
+
+            Text {
+                horizontal-stretch: 1;
+                text: @tr("FOLDERS");
+                font-size: 11px;
+                font-weight: 700;
+                letter-spacing: 1.2px;
+                color: Theme.text-tertiary;
+                vertical-alignment: center;
+            }
+            IconAction {
+                icon: Icons.plus;
+                size: 11px;
+                tooltip: @tr("New folder");
+                clicked => { root.new-folder(); }
+            }
+        }
+
+        folders-scroll := ScrollView {
+            vertical-stretch: 1;
+            content-width: self.visible-width;
+            content-height: folders-list.preferred-height;
+
+            folders-list := VerticalLayout {
+                width: folders-scroll.visible-width;
+                alignment: start;
+                spacing: 2px;
+
+                for folder in root.folders: FolderRow {
+                    folder: folder;
+                    active: root.page == Page.vault && root.filter == 4 && root.active-folder == folder.id;
+                    clicked => { root.select-folder(folder.id); }
+                    action(a) => { root.folder-action(folder.id, a); }
+                }
+
+                if root.folders.length == 0: NavItem {
+                    icon: Icons.plus;
+                    text: @tr("New folder");
+                    count: "";
+                    clicked => { root.new-folder(); }
+                }
+            }
+        }
+
+        // Vault card: shows the open vault; a click opens
+        // the vault menu (switch, create, rename, delete).
+        Rectangle {
+            border-radius: 12px;
+            background: Theme.bg-elevated;
+            border-width: 1px;
+            border-color: Theme.border-subtle;
+
+            HorizontalLayout {
+                padding: 4px;
+                padding-right: 6px;
+                spacing: 2px;
+
+                Rectangle {
+                    horizontal-stretch: 1;
+                    border-radius: 9px;
+                    background: card-ta.has-hover ? Theme.bg-hover : transparent;
+
+                    HorizontalLayout {
+                        padding-top: 6px;
+                        padding-bottom: 6px;
+                        padding-left: 8px;
+                        padding-right: 6px;
+                        spacing: 10px;
+
+                        InitialsAvatar {
+                            initials: root.vault-initials;
+                        }
+
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            spacing: 1px;
+
+                            Text {
+                                text: root.vault-name;
+                                font-size: 13px;
+                                font-weight: 600;
+                                color: Theme.text-primary;
+                                overflow: elide;
+                            }
+                            Text {
+                                text: root.vault-subtitle;
+                                font-size: 11px;
+                                color: Theme.text-tertiary;
+                                overflow: elide;
+                            }
+                        }
+
+                        Icon {
+                            source: Icons.angle-up;
+                            size: 11px;
+                        }
+                    }
+
+                    card-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { vault-menu.show(); }
+                    }
+
+                    vault-menu := PopupWindow {
+                        x: 0;
+                        y: -self.height - 8px;
+                        width: 236px;
+
+                        Rectangle {
+                            background: Theme.bg-elevated;
+                            border-radius: 12px;
+                            border-width: 1px;
+                            border-color: Theme.border-subtle;
+                            drop-shadow-color: Theme.shadow-modal;
+                            drop-shadow-blur: 24px;
+                            drop-shadow-offset-y: 8px;
+
+                            VerticalLayout {
+                                padding: 6px;
+
+                                for action[i] in [
+                                    { icon: Icons.switch, text: @tr("Switch vault"), danger: false },
+                                    { icon: Icons.plus, text: @tr("New vault"), danger: false },
+                                    { icon: Icons.pen, text: @tr("Rename…"), danger: false },
+                                    { icon: Icons.trash, text: @tr("Delete vault…"), danger: true },
+                                ]: Rectangle {
+                                    border-radius: 8px;
+                                    background: item-ta.has-hover ? Theme.bg-hover : transparent;
+
+                                    HorizontalLayout {
+                                        padding-left: 10px;
+                                        padding-right: 10px;
+                                        padding-top: 8px;
+                                        padding-bottom: 8px;
+                                        spacing: 10px;
+
+                                        Icon {
+                                            source: action.icon;
+                                            size: 13px;
+                                            colorize: action.danger ? Theme.danger : Theme.text-secondary;
+                                        }
+                                        Text {
+                                            horizontal-stretch: 1;
+                                            text: action.text;
+                                            font-size: 13px;
+                                            font-weight: 500;
+                                            color: action.danger ? Theme.danger : Theme.text-primary;
+                                        }
+                                    }
+
+                                    item-ta := TouchArea {
+                                        clicked => { root.vault-action(i); }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                VerticalLayout {
+                    alignment: center;
+                    IconAction {
+                        icon: Icons.gear;
+                        size: 15px;
+                        icon-color: root.page == Page.settings ? Theme.accent : Theme.text-tertiary;
+                        tooltip: @tr("Settings");
+                        clicked => { root.navigate(Page.settings); }
+                    }
+                }
+
+                // Lock button
+                VerticalLayout {
+                    alignment: center;
+                    IconAction {
+                        icon: Icons.lock;
+                        size: 15px;
+                        tooltip: @tr("Lock (Ctrl+L)");
+                        clicked => { root.lock(); }
+                    }
+                }
+            }
+        }
+    }
+}

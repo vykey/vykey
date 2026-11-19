@@ -1,0 +1,79 @@
+// Design tokens: colours for the light and dark modes, fonts, icons.
+// The mode is chosen in Settings: system (follows the OS), light or dark.
+
+import { Palette } from "std-widgets.slint";
+
+import "fonts/Manrope.ttf";
+import "fonts/JetBrainsMono-Regular.ttf";
+import "fonts/JetBrainsMono-SemiBold.ttf";
+
+export global Theme {
+    // 0 = system, 1 = light, 2 = dark (vykey_core::settings::ThemeMode).
+    in-out property <int> mode: 0;
+    out property <bool> dark: mode == 0 ? Palette.color-scheme == ColorScheme.dark : mode == 2;
+
+    out property <color> bg-base: dark ? #0B0B10 : #F4F4F7;
+    out property <color> bg-sidebar: dark ? #101017 : #ECECF1;
+    out property <color> bg-elevated: dark ? #17171F : #FFFFFF;
+    out property <color> bg-hover: dark ? #FFFFFF0A : #00000008;
+    out property <color> border-subtle: dark ? #FFFFFF12 : #0000000F;
+    out property <color> text-primary: dark ? #F2F2F5 : #17171C;
+    out property <color> text-secondary: dark ? #9C9CA8 : #5C5C66;
+    out property <color> text-tertiary: dark ? #63636E : #8A8A94;
+    out property <color> accent: dark ? #8F81FF : #6A58F0;
+    out property <color> accent-soft: dark ? #8F81FF26 : #6A58F014;
+    out property <color> success: dark ? #3DD68C : #1F9E66;
+    out property <color> warning: dark ? #FFB224 : #C77C02;
+    out property <color> danger: dark ? #F2555A : #D93A3F;
+
+    // Modal shadow
+    out property <color> shadow-modal: dark ? #00000080 : #17171C26;
+    out property <color> overlay: #06060A99;
+
+    out property <brush> logo-gradient: @linear-gradient(135deg, #9A8FFF 0%, #5B45E0 100%);
+    out property <brush> avatar-gradient: @linear-gradient(135deg, #3DD68C 0%, #2E9E8F 100%);
+
+    out property <string> font: "Manrope";
+    out property <string> mono: "JetBrains Mono";
+}
+
+// Font Awesome Free 6.7.2 (CC BY 4.0), see icons/LICENSE.txt.
+export global Icons {
+    out property <image> shield-halved: @image-url("icons/shield-halved.svg");
+    out property <image> lock: @image-url("icons/lock.svg");
+    out property <image> eye: @image-url("icons/eye.svg");
+    out property <image> eye-slash: @image-url("icons/eye-slash.svg");
+    out property <image> search: @image-url("icons/magnifying-glass.svg");
+    out property <image> vault: @image-url("icons/vault.svg");
+    out property <image> shield: @image-url("icons/shield.svg");
+    out property <image> plus: @image-url("icons/plus.svg");
+    out property <image> sort: @image-url("icons/arrow-down-wide-short.svg");
+    out property <image> key: @image-url("icons/key.svg");
+    out property <image> globe: @image-url("icons/globe.svg");
+    out property <image> ellipsis: @image-url("icons/ellipsis.svg");
+    out property <image> copy: @image-url("icons/copy.svg");
+    out property <image> clock: @image-url("icons/clock.svg");
+    out property <image> external: @image-url("icons/arrow-up-right-from-square.svg");
+    out property <image> xmark: @image-url("icons/xmark.svg");
+    out property <image> rotate: @image-url("icons/rotate.svg");
+    out property <image> warning: @image-url("icons/triangle-exclamation.svg");
+    out property <image> clone: @image-url("icons/clone.svg");
+    out property <image> mobile: @image-url("icons/mobile-screen.svg");
+    out property <image> pen: @image-url("icons/pen.svg");
+    out property <image> trash: @image-url("icons/trash.svg");
+    out property <image> check: @image-url("icons/check.svg");
+    out property <image> stale: @image-url("icons/calendar-xmark.svg");
+    out property <image> circle-check: @image-url("icons/circle-check.svg");
+    out property <image> switch: @image-url("icons/right-left.svg");
+    out property <image> angle-up: @image-url("icons/angle-up.svg");
+    out property <image> angle-down: @image-url("icons/angle-down.svg");
+    out property <image> star: @image-url("icons/star.svg");
+    out property <image> star-outline: @image-url("icons/star-regular.svg");
+    out property <image> card: @image-url("icons/credit-card.svg");
+    out property <image> note: @image-url("icons/note-sticky.svg");
+    out property <image> folder: @image-url("icons/folder.svg");
+    out property <image> gear: @image-url("icons/gear.svg");
+    out property <image> sun: @image-url("icons/sun.svg");
+    out property <image> moon: @image-url("icons/moon.svg");
+    out property <image> desktop: @image-url("icons/desktop.svg");
+}

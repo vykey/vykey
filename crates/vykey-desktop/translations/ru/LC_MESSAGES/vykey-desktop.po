@@ -1,0 +1,793 @@
+# Russian translation of vykey. English source strings are in ui/*.slint
+# (`@tr(...)`); every one of them must have a msgstr here
+# (checked by the `translations_complete` test).
+msgid ""
+msgstr ""
+"Project-Id-Version: vykey\n"
+"Language: ru\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
+
+msgid "Hide password"
+msgstr "Скрыть пароль"
+
+msgid "Show password"
+msgstr "Показать пароль"
+
+msgid "Password length"
+msgstr "Длина пароля"
+
+msgid "No folder"
+msgstr "Без папки"
+
+msgid "Local vault"
+msgstr "Локальное хранилище"
+
+msgid "Edit…"
+msgstr "Изменить…"
+
+msgid "Delete folder…"
+msgstr "Удалить папку…"
+
+msgid "Search"
+msgstr "Поиск"
+
+msgid "Clear search"
+msgstr "Очистить поиск"
+
+msgid "All items"
+msgstr "Все записи"
+
+msgid "Favorites"
+msgstr "Избранное"
+
+msgid "Cards"
+msgstr "Карты"
+
+msgid "Notes"
+msgstr "Заметки"
+
+msgid "Security"
+msgstr "Безопасность"
+
+msgid "FOLDERS"
+msgstr "ПАПКИ"
+
+msgid "New folder"
+msgstr "Новая папка"
+
+msgid "Switch vault"
+msgstr "Сменить хранилище"
+
+msgid "New vault"
+msgstr "Новое хранилище"
+
+msgid "Rename…"
+msgstr "Переименовать…"
+
+msgid "Delete vault…"
+msgstr "Удалить хранилище…"
+
+msgid "Settings"
+msgstr "Настройки"
+
+msgid "Lock (Ctrl+L)"
+msgstr "Заблокировать (Ctrl+L)"
+
+msgid "of 100"
+msgstr "из 100"
+
+msgid "Security score"
+msgstr "Индекс защиты"
+
+msgid "Reused"
+msgstr "Повторяются"
+
+msgid "Two-factor coverage"
+msgstr "Двухфакторная защита"
+
+msgid "Unchanged for over a year"
+msgstr "Не менялись больше года"
+
+msgid "Needs attention"
+msgstr "Требуют внимания"
+
+msgid "Collapse"
+msgstr "Свернуть"
+
+msgid "Add items to audit your vault"
+msgstr "Добавьте записи, чтобы проверить хранилище"
+
+msgid "No issues found"
+msgstr "Проблем не найдено"
+
+msgid "Fix"
+msgstr "Исправить"
+
+msgid "Master password"
+msgstr "Мастер-пароль"
+
+msgid "Checking…"
+msgstr "Проверяем…"
+
+msgid "Unlock"
+msgstr "Разблокировать"
+
+msgid "Enter a vault name"
+msgstr "Введите название хранилища"
+
+msgid "The master password must be at least 8 characters long"
+msgstr "Мастер-пароль должен быть не короче 8 символов"
+
+msgid "Passwords do not match"
+msgstr "Пароли не совпадают"
+
+msgid "Vault name"
+msgstr "Название хранилища"
+
+msgid "e.g. Personal"
+msgstr "Например, Личное"
+
+msgid "At least 8 characters"
+msgstr "Не короче 8 символов"
+
+msgid "Repeat password"
+msgstr "Повторите пароль"
+
+msgid "Master password again"
+msgstr "Ещё раз мастер-пароль"
+
+msgid "Repeat master password"
+msgstr "Повторите мастер-пароль"
+
+msgid "Creating…"
+msgstr "Создаём…"
+
+msgid "Create vault"
+msgstr "Создать хранилище"
+
+msgid "Welcome back"
+msgstr "С возвращением"
+
+msgid "Choose a master password. It cannot be recovered — keep it somewhere safe"
+msgstr "Придумайте мастер-пароль. Восстановить его нельзя — сохраните его в надёжном месте"
+
+msgid "Enter your master password to open the vault"
+msgstr "Введите мастер-пароль, чтобы открыть хранилище"
+
+msgid "Back to unlock"
+msgstr "Назад к разблокировке"
+
+msgid "Create a new vault"
+msgstr "Создать новое хранилище"
+
+msgid "Stored on this device"
+msgstr "Сохраняются на этом устройстве"
+
+msgid "APPEARANCE"
+msgstr "ОФОРМЛЕНИЕ"
+
+msgid "Theme"
+msgstr "Тема"
+
+msgid "Follows the system setting"
+msgstr "Следует за настройками системы"
+
+msgid "Always light"
+msgstr "Всегда светлая"
+
+msgid "Always dark"
+msgstr "Всегда тёмная"
+
+msgid "System"
+msgstr "Системная"
+
+msgid "Light"
+msgstr "Светлая"
+
+msgid "Dark"
+msgstr "Тёмная"
+
+msgid "Close"
+msgstr "Закрыть"
+
+msgid "Enter a name"
+msgstr "Введите название"
+
+msgid "Rename vault"
+msgstr "Переименовать хранилище"
+
+msgid "Name"
+msgstr "Название"
+
+msgid "e.g. Work"
+msgstr "Например, Работа"
+
+msgid "Cancel"
+msgstr "Отмена"
+
+msgid "Save"
+msgstr "Сохранить"
+
+msgid "Delete vault?"
+msgstr "Удалить хранилище?"
+
+msgid "Enter the master password to confirm"
+msgstr "Введите мастер-пароль, чтобы подтвердить"
+
+msgid "Delete vault"
+msgstr "Удалить хранилище"
+
+msgid "Edit folder"
+msgstr "Изменить папку"
+
+msgid "Folder name"
+msgstr "Название папки"
+
+msgid "Color"
+msgstr "Цвет"
+
+msgid "Create"
+msgstr "Создать"
+
+msgid "Delete folder?"
+msgstr "Удалить папку?"
+
+msgid "Delete"
+msgstr "Удалить"
+
+msgid "Folder"
+msgstr "Папка"
+
+msgid "Edit item"
+msgstr "Редактирование"
+
+msgid "New card"
+msgstr "Новая карта"
+
+msgid "New note"
+msgstr "Новая заметка"
+
+msgid "New item"
+msgstr "Новая запись"
+
+msgid "Password"
+msgstr "Пароль"
+
+msgid "Card"
+msgstr "Карта"
+
+msgid "Note"
+msgstr "Заметка"
+
+msgid "e.g. Chase Visa"
+msgstr "Например, Сбер Visa"
+
+msgid "e.g. Home Wi-Fi"
+msgstr "Например, Wi-Fi дома"
+
+msgid "e.g. GitHub"
+msgstr "Например, GitHub"
+
+msgid "Username"
+msgstr "Логин"
+
+msgid "Email or username"
+msgstr "Email или имя пользователя"
+
+msgid "Generate new"
+msgstr "Сгенерировать новый"
+
+msgid "Copy password"
+msgstr "Скопировать пароль"
+
+msgid "Website"
+msgstr "Сайт"
+
+msgid "2FA secret"
+msgstr "Секрет 2FA"
+
+msgid "Base32, optional"
+msgstr "Base32, необязательно"
+
+msgid "2FA secret (TOTP)"
+msgstr "Секрет 2FA (TOTP)"
+
+msgid "Card number"
+msgstr "Номер карты"
+
+msgid "The number fails validation — check the digits"
+msgstr "Номер не проходит проверку — проверьте цифры"
+
+msgid "Cardholder"
+msgstr "Держатель"
+
+msgid "Cardholder name"
+msgstr "Держатель карты"
+
+msgid "As printed on the card"
+msgstr "Как на карте"
+
+msgid "Expiry"
+msgstr "Срок"
+
+msgid "Expiry date"
+msgstr "Срок действия"
+
+msgid "MM/YY"
+msgstr "ММ/ГГ"
+
+msgid "PIN"
+msgstr "PIN-код"
+
+msgid "Note text"
+msgstr "Текст заметки"
+
+msgid "Wi-Fi passwords, codes, addresses — everything is encrypted"
+msgstr "Пароль от Wi-Fi, коды, адреса — всё будет зашифровано"
+
+msgid "Recovery codes, security answers…"
+msgstr "Коды восстановления, ответы на вопросы…"
+
+msgid "Delete item?"
+msgstr "Удалить запись?"
+
+msgid "Move to folder"
+msgstr "Переместить в папку"
+
+msgid "Add to folder"
+msgstr "В папку"
+
+msgid "Expired"
+msgstr "Истекла"
+
+msgid "CARDHOLDER"
+msgstr "ДЕРЖАТЕЛЬ"
+
+msgid "EXPIRES"
+msgstr "СРОК"
+
+msgid "Add"
+msgstr "Добавить"
+
+msgid "Sort: last modified"
+msgstr "Сортировка: по дате изменения"
+
+msgid "Sort: name"
+msgstr "Сортировка: по имени"
+
+msgid "Nothing found"
+msgstr "Ничего не найдено"
+
+msgid "No favorites"
+msgstr "Нет избранного"
+
+msgid "No cards yet"
+msgstr "Карт пока нет"
+
+msgid "No notes yet"
+msgstr "Заметок пока нет"
+
+msgid "This folder is empty"
+msgstr "Папка пуста"
+
+msgid "Your vault is empty"
+msgstr "Хранилище пусто"
+
+msgid "Try a different search"
+msgstr "Попробуйте изменить запрос"
+
+msgid "Star an item to see it here"
+msgstr "Отметьте запись звёздочкой, чтобы она появилась здесь"
+
+msgid "Number, expiry and CVV are stored encrypted"
+msgstr "Номер, срок и CVV будут храниться в зашифрованном виде"
+
+msgid "Keep codes, addresses and anything you must not forget here"
+msgstr "Храните здесь коды, адреса и всё, что нельзя забыть"
+
+msgid "Create an item here or move one from its details"
+msgstr "Создайте запись здесь или перенесите её из карточки записи"
+
+msgid "Add your first item — a password, card or note"
+msgstr "Добавьте первую запись — пароль, карту или заметку"
+
+msgid "Add card"
+msgstr "Добавить карту"
+
+msgid "Add note"
+msgstr "Добавить заметку"
+
+msgid "Add item"
+msgstr "Добавить запись"
+
+msgid "Item details appear here"
+msgstr "Здесь появятся детали записи"
+
+msgid "Select an item"
+msgstr "Выберите запись"
+
+msgid "Logins, cards and notes open here"
+msgstr "Логины, карты и заметки открываются здесь"
+
+msgid "Remove from favorites"
+msgstr "Убрать из избранного"
+
+msgid "Add to favorites"
+msgstr "В избранное"
+
+msgid "Actions"
+msgstr "Действия"
+
+msgid "Edit"
+msgstr "Изменить"
+
+msgid "USERNAME"
+msgstr "ЛОГИН"
+
+msgid "PASSWORD"
+msgstr "ПАРОЛЬ"
+
+msgid "2FA CODE"
+msgstr "КОД 2FA"
+
+msgid "Invalid secret"
+msgstr "Неверный секрет"
+
+msgid "Copy code"
+msgstr "Скопировать код"
+
+msgid "WEBSITE"
+msgstr "САЙТ"
+
+msgid "Open in browser"
+msgstr "Открыть в браузере"
+
+msgid "CARD NUMBER"
+msgstr "НОМЕР КАРТЫ"
+
+msgid "EXPIRY DATE"
+msgstr "СРОК ДЕЙСТВИЯ"
+
+msgid "expired"
+msgstr "истекла"
+
+msgid "expires soon"
+msgstr "скоро истекает"
+
+msgid "Hide number"
+msgstr "Скрыть номер"
+
+msgid "Show number"
+msgstr "Показать номер"
+
+msgid "Copy number"
+msgstr "Скопировать номер"
+
+msgid "Hide CVV"
+msgstr "Скрыть CVV"
+
+msgid "Show CVV"
+msgstr "Показать CVV"
+
+msgid "Copy CVV"
+msgstr "Скопировать CVV"
+
+msgid "Hide PIN"
+msgstr "Скрыть PIN"
+
+msgid "Show PIN"
+msgstr "Показать PIN"
+
+msgid "Copy PIN"
+msgstr "Скопировать PIN"
+
+msgid "Copy username"
+msgstr "Скопировать логин"
+
+msgid "Copy cardholder name"
+msgstr "Скопировать имя держателя"
+
+msgid "NOTE"
+msgstr "ЗАМЕТКА"
+
+msgid "NOTES"
+msgstr "ЗАМЕТКИ"
+
+msgid "Copy notes"
+msgstr "Скопировать заметки"
+
+msgid "Folder {0}"
+msgstr "Папка {0}"
+
+msgid "{0} of {1}"
+msgstr "{0} из {1}"
+
+msgid "+{0} this month"
+msgstr "+{0} за месяц"
+
+msgid "All {0}"
+msgstr "Все {0}"
+
+msgid "Vault “{0}” will be deleted permanently."
+msgstr "Хранилище «{0}» будет удалено без возможности восстановления."
+
+msgid "Color {0}"
+msgstr "Цвет {0}"
+
+msgid "Folder “{0}” is empty."
+msgstr "Папка «{0}» пуста."
+
+msgid "“{0}” will be deleted permanently."
+msgstr "«{0}» будет удалена без возможности восстановления."
+
+msgid "Folder {0}, move"
+msgstr "Папка {0}, переместить"
+
+msgid "Found {0} of {1}"
+msgstr "Найдено {0} из {1}"
+
+msgid "{0} s"
+msgstr "{0} с"
+
+msgid "Language"
+msgstr "Язык"
+
+msgid "Follows the system language"
+msgstr "Следует за языком системы"
+
+msgid "Interface language"
+msgstr "Язык интерфейса"
+
+msgid "Wrong master password"
+msgstr "Неверный мастер-пароль"
+
+msgid "A vault with this name already exists"
+msgstr "Хранилище с таким названием уже есть"
+
+msgid "A folder with this name already exists"
+msgstr "Папка с таким названием уже есть"
+
+msgid "Folder not found"
+msgstr "Папка не найдена"
+
+msgid "The database was created by a newer version of vykey — please update the app"
+msgstr "База создана более новой версией vykey — обновите приложение"
+
+msgid "Error: {0}"
+msgstr "Ошибка: {0}"
+
+msgid "The database is unavailable"
+msgstr "База данных недоступна"
+
+msgid "Could not determine the database path"
+msgstr "Не удалось определить путь к базе данных"
+
+msgid "The 2FA secret must be Base32 (letters A–Z and digits 2–7)"
+msgstr "Секрет 2FA должен быть в формате Base32 (буквы A–Z и цифры 2–7)"
+
+msgid "Enter the expiry as MM/YY, e.g. 08/28"
+msgstr "Срок действия — в формате ММ/ГГ, например 08/28"
+
+msgid "Item saved"
+msgstr "Запись сохранена"
+
+msgid "Item deleted"
+msgstr "Запись удалена"
+
+msgid "Vault renamed"
+msgstr "Хранилище переименовано"
+
+msgid "Vault “{0}” deleted"
+msgstr "Хранилище «{0}» удалено"
+
+msgid "Folder created"
+msgstr "Папка создана"
+
+msgid "Folder saved"
+msgstr "Папка сохранена"
+
+msgid "Folder “{0}” deleted"
+msgstr "Папка «{0}» удалена"
+
+msgid "Moved to “{0}”"
+msgstr "Перемещено в «{0}»"
+
+msgid "Removed from folder"
+msgstr "Запись убрана из папки"
+
+msgid "Clipboard is unavailable"
+msgstr "Буфер обмена недоступен"
+
+msgid "Copied · clipboard clears in 30 s"
+msgstr "Скопировано · буфер очистится через 30 с"
+
+msgid "Could not copy"
+msgstr "Не удалось скопировать"
+
+msgid "Could not save settings"
+msgstr "Не удалось сохранить настройки"
+
+msgid "Created {0}"
+msgstr "Создано {0}"
+
+msgid "Created {0}, modified {1}"
+msgstr "Создано {0}, изменено {1}"
+
+msgid "Jan"
+msgstr "янв"
+
+msgid "Feb"
+msgstr "фев"
+
+msgid "Mar"
+msgstr "мар"
+
+msgid "Apr"
+msgstr "апр"
+
+msgid "May"
+msgstr "мая"
+
+msgid "Jun"
+msgstr "июн"
+
+msgid "Jul"
+msgstr "июл"
+
+msgid "Aug"
+msgstr "авг"
+
+msgid "Sep"
+msgstr "сен"
+
+msgid "Oct"
+msgstr "окт"
+
+msgid "Nov"
+msgstr "ноя"
+
+msgid "Dec"
+msgstr "дек"
+
+msgid "just now"
+msgstr "только что"
+
+msgid "yesterday"
+msgstr "вчера"
+
+msgid "{0} and {1}"
+msgstr "{0} и {1}"
+
+msgid "Weak password"
+msgstr "Слабый пароль"
+
+msgid "Password also used in {0}"
+msgstr "Пароль используется также в {0}"
+
+msgid "Weak password, also used in {0}"
+msgstr "Слабый пароль, используется также в {0}"
+
+msgid "Password unchanged for over a year"
+msgstr "Пароль не менялся больше года"
+
+msgid "The card has expired"
+msgstr "Срок действия карты истёк"
+
+msgid "The card expires soon"
+msgstr "Срок действия карты скоро истекает"
+
+msgid "Excellent protection."
+msgstr "Отличный уровень."
+
+msgid "Good protection."
+msgstr "Хороший уровень."
+
+msgid "Fair protection."
+msgstr "Средний уровень."
+
+msgid "Weak protection."
+msgstr "Низкий уровень."
+
+msgid "No issues found."
+msgstr "Проблем не найдено."
+
+msgid "Vault audited today at {0}"
+msgstr "Аудит хранилища обновлён сегодня в {0}"
+
+msgid "Weak"
+msgstr "Слабый"
+
+msgid "Fair"
+msgstr "Средний"
+
+msgid "Strong"
+msgstr "Надёжный"
+
+msgid "Very strong"
+msgstr "Очень надёжный"
+
+msgctxt "language"
+msgid "System"
+msgstr "Системный"
+
+msgid "{n} minute ago"
+msgid_plural "{n} minutes ago"
+msgstr[0] "{n} минуту назад"
+msgstr[1] "{n} минуты назад"
+msgstr[2] "{n} минут назад"
+
+msgid "{n} hour ago"
+msgid_plural "{n} hours ago"
+msgstr[0] "{n} час назад"
+msgstr[1] "{n} часа назад"
+msgstr[2] "{n} часов назад"
+
+msgid "{n} day ago"
+msgid_plural "{n} days ago"
+msgstr[0] "{n} день назад"
+msgstr[1] "{n} дня назад"
+msgstr[2] "{n} дней назад"
+
+msgid "{0}, {1} and {n} more"
+msgid_plural "{0}, {1} and {n} more"
+msgstr[0] "{0}, {1} и ещё {n}"
+msgstr[1] "{0}, {1} и ещё {n}"
+msgstr[2] "{0}, {1} и ещё {n}"
+
+msgid "Fix {n} risk below to improve it."
+msgid_plural "Fix {n} risks below to improve it."
+msgstr[0] "Устраните {n} риск ниже, чтобы повысить защиту."
+msgstr[1] "Устраните {n} риска ниже, чтобы повысить защиту."
+msgstr[2] "Устраните {n} рисков ниже, чтобы повысить защиту."
+
+msgctxt "security stat"
+msgid "Weak password"
+msgid_plural "Weak passwords"
+msgstr[0] "Слабый пароль"
+msgstr[1] "Слабых пароля"
+msgstr[2] "Слабых паролей"
+
+msgid "Item in the vault"
+msgid_plural "Items in the vault"
+msgstr[0] "Запись в хранилище"
+msgstr[1] "Записи в хранилище"
+msgstr[2] "Записей в хранилище"
+
+msgid "Vault “{0}” and its {n} item will be deleted permanently."
+msgid_plural "Vault “{0}” and its {n} items will be deleted permanently."
+msgstr[0] "Хранилище «{0}» и {n} запись в нём будут удалены без возможности восстановления."
+msgstr[1] "Хранилище «{0}» и {n} записи в нём будут удалены без возможности восстановления."
+msgstr[2] "Хранилище «{0}» и {n} записей в нём будут удалены без возможности восстановления."
+
+msgid "Folder “{0}” will be deleted. {n} item stays in the vault without a folder."
+msgid_plural "Folder “{0}” will be deleted. {n} items stay in the vault without a folder."
+msgstr[0] "Папка «{0}» будет удалена. {n} запись останется в хранилище без папки."
+msgstr[1] "Папка «{0}» будет удалена. {n} записи останутся в хранилище без папки."
+msgstr[2] "Папка «{0}» будет удалена. {n} записей останутся в хранилище без папки."
+
+msgid "Length: {n} character"
+msgid_plural "Length: {n} characters"
+msgstr[0] "Длина: {n} символ"
+msgstr[1] "Длина: {n} символа"
+msgstr[2] "Длина: {n} символов"
+
+msgid "{n} card"
+msgid_plural "{n} cards"
+msgstr[0] "{n} карта"
+msgstr[1] "{n} карты"
+msgstr[2] "{n} карт"
+
+msgid "{n} note"
+msgid_plural "{n} notes"
+msgstr[0] "{n} заметка"
+msgstr[1] "{n} заметки"
+msgstr[2] "{n} заметок"
+
+msgid "{n} item"
+msgid_plural "{n} items"
+msgstr[0] "{n} запись"
+msgstr[1] "{n} записи"
+msgstr[2] "{n} записей"

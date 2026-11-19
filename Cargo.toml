@@ -1,0 +1,34 @@
+[workspace]
+resolver = "3"
+members = ["crates/vykey-core", "crates/vykey-desktop"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT"
+repository = "https://github.com/vykey/vykey"
+authors = ["stickpro"]
+
+[workspace.dependencies]
+vykey-core = { path = "crates/vykey-core" }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+# The software renderer, Argon2 and SQLite are 10-30x slower unoptimised, so
+# dev builds optimise dependencies fully and our crates lightly (Slint's
+# generated UI code and generic renderer code are compiled into vykey-desktop).
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

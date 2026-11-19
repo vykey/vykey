@@ -1,0 +1,592 @@
+// "New item" modal, also used for editing: login, card or note.
+
+import { Theme, Icons } from "theme.slint";
+import { Field, TextArea, FieldLabel, PrimaryButton, SecondaryButton, SquareButton, IconAction, StrengthMeter, LengthSlider, Backend, Kind, Icon, FolderItem, FolderDot, FolderMenu } from "components.slint";
+
+export struct EntryForm {
+    id: string,
+    kind: int,
+    favorite: bool,
+    title: string,
+    username: string,
+    password: string,
+    url: string,
+    totp-secret: string,
+    notes: string,
+    card-holder: string,
+    card-number: string,
+    card-expiry: string,
+    card-cvv: string,
+    card-pin: string,
+    // Folder id ("" = none); name and colour for the picker.
+    folder: string,
+    folder-name: string,
+    folder-color: color,
+}
+
+export component Modal inherits Rectangle {
+    in property <length> card-width: 520px;
+
+    // Only the card fades in. The full-window backdrop appears at once:
+    // animating anything that covers the whole window repaints every pixel
+    // each frame, which is slow with the software renderer on wide screens.
+    // The card's start opacity is a constant changed in `init`, so the
+    // animation has a starting point (bindings are evaluated lazily); it is
+    // on an inner element so components inheriting Modal can have `init`.
+    Rectangle {
+        background: Theme.overlay;
+
+        // Swallow clicks behind the card.
+        TouchArea { }
+
+        Rectangle {
+            width: min(root.card-width, root.width - 48px);
+            height: min(card-layout.preferred-height, root.height - 48px);
+            x: (root.width - self.width) / 2;
+            y: (root.height - self.height) / 2;
+            border-radius: 20px;
+            background: Theme.bg-elevated;
+            border-width: 1px;
+            border-color: Theme.border-subtle;
+            drop-shadow-color: Theme.shadow-modal;
+            drop-shadow-offset-y: 24px;
+            drop-shadow-blur: 64px;
+            clip: true;
+            opacity: 0;
+            animate opacity { duration: 160ms; easing: ease-out; }
+            init => { self.opacity = 1; }
+
+            card-layout := VerticalLayout {
+                padding: 24px;
+                spacing: 16px;
+                @children
+            }
+        }
+    }
+}
+
+// Type chip.
+component KindChip inherits Rectangle {
+    in property <image> icon;
+    in property <string> text;
+    in property <bool> selected;
+    callback clicked;
+
+    border-radius: 999px;
+    background: root.selected ? Theme.accent-soft : ta.has-hover ? Theme.bg-hover : transparent;
+    border-width: 1px;
+    border-color: root.selected ? Theme.accent : Theme.border-subtle;
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-checked: root.selected;
+    accessible-action-default => { root.clicked(); }
+
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        padding-top: 8px;
+        padding-bottom: 8px;
+        spacing: 7px;
+
+        Icon {
+            source: root.icon;
+            size: 12px;
+            colorize: root.selected ? Theme.accent : Theme.text-tertiary;
+        }
+        Text {
+            text: root.text;
+            font-size: 13px;
+            font-weight: root.selected ? 600 : 500;
+            color: root.selected ? Theme.accent : Theme.text-secondary;
+            vertical-alignment: center;
+        }
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// Field-styled dropdown with the folders.
+component FolderSelect inherits Rectangle {
+    in property <[FolderItem]> folders;
+    in-out property <string> value;
+    in-out property <string> value-name;
+    in-out property <color> value-color;
+
+    border-radius: 10px;
+    background: Theme.bg-base;
+    border-width: 1px;
+    border-color: ta.has-hover ? Theme.text-tertiary.with-alpha(0.5) : Theme.border-subtle;
+    accessible-role: combobox;
+    accessible-label: @tr("Folder");
+    accessible-value: root.value == "" ? @tr("No folder") : root.value-name;
+    accessible-action-default => { menu.show(); }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-top: 11px;
+        padding-bottom: 11px;
+        spacing: 10px;
+
+        if root.value != "": VerticalLayout {
+            alignment: center;
+            FolderDot { tone: root.value-color; }
+        }
+        Text {
+            horizontal-stretch: 1;
+            text: root.value == "" ? @tr("No folder") : root.value-name;
+            font-size: 14px;
+            color: root.value == "" ? Theme.text-tertiary : Theme.text-primary;
+            overflow: elide;
+            vertical-alignment: center;
+        }
+        Icon {
+            source: Icons.angle-down;
+            size: 11px;
+        }
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { menu.show(); }
+    }
+
+    menu := PopupWindow {
+        x: 0;
+        y: root.height + 4px;
+        width: root.width;
+
+        FolderMenu {
+            folders: root.folders;
+            current: root.value;
+            picked(f) => {
+                root.value = f.id;
+                root.value-name = f.name;
+                root.value-color = f.color;
+            }
+        }
+    }
+}
+
+// Label + field stacked.
+component Labeled inherits VerticalLayout {
+    in property <string> label;
+    spacing: 6px;
+    FieldLabel { text: root.label; }
+    @children
+}
+
+export component EntryFormModal inherits Modal {
+    in property <EntryForm> initial;
+    in property <[FolderItem]> folders;
+    in-out property <string> error;
+    callback save(EntryForm);
+    callback cancel();
+
+    property <bool> editing: root.initial.id != "";
+    property <int> length: 16;
+
+    // Form values live here so fields can sit inside per-kind `if` blocks.
+    property <int> kind;
+    property <string> f-title;
+    property <string> f-login;
+    property <string> f-password;
+    property <string> f-url;
+    property <string> f-totp;
+    property <string> f-notes;
+    property <string> f-holder;
+    property <string> f-number;
+    property <string> f-expiry;
+    property <string> f-cvv;
+    property <string> f-pin;
+    property <string> f-folder;
+    property <string> f-folder-name;
+    property <color> f-folder-color;
+
+    function submit() {
+        if root.f-title == "" {
+            root.error = @tr("Enter a name");
+            title.focus();
+            return;
+        }
+        root.save({
+            id: root.initial.id,
+            kind: root.kind,
+            favorite: root.initial.favorite,
+            title: root.f-title,
+            username: root.kind == Kind.login ? root.f-login : "",
+            password: root.kind == Kind.login ? root.f-password : "",
+            url: root.kind == Kind.login ? root.f-url : "",
+            totp-secret: root.kind == Kind.login ? root.f-totp : "",
+            notes: root.f-notes,
+            card-holder: root.f-holder,
+            card-number: root.f-number,
+            card-expiry: root.f-expiry,
+            card-cvv: root.f-cvv,
+            card-pin: root.f-pin,
+            folder: root.f-folder,
+            folder-name: root.f-folder-name,
+            folder-color: root.f-folder-color,
+        });
+    }
+
+    init => { root.load(); }
+    changed initial => { root.load(); }
+
+    function load() {
+        root.error = "";
+        root.kind = root.initial.kind;
+        root.f-title = root.initial.title;
+        root.f-login = root.initial.username;
+        root.f-password = root.initial.password;
+        root.f-url = root.initial.url;
+        root.f-totp = root.initial.totp-secret;
+        root.f-notes = root.initial.notes;
+        root.f-holder = root.initial.card-holder;
+        root.f-number = root.initial.card-number;
+        root.f-expiry = root.initial.card-expiry;
+        root.f-cvv = root.initial.card-cvv;
+        root.f-pin = root.initial.card-pin;
+        root.f-folder = root.initial.folder;
+        root.f-folder-name = root.initial.folder-name;
+        root.f-folder-color = root.initial.folder-color;
+        if root.initial.id == "" {
+            // New entry: start with a generated password.
+            root.f-password = Backend.generate-password(root.length);
+        } else if root.f-password != "" {
+            root.length = Math.clamp(root.f-password.character-count, 8, 64);
+        }
+        title.focus();
+    }
+
+    // Header
+    HorizontalLayout {
+        Text {
+            horizontal-stretch: 1;
+            text: root.editing ? @tr("Edit item")
+                : root.kind == Kind.card ? @tr("New card")
+                : root.kind == Kind.note ? @tr("New note") : @tr("New item");
+            font-size: 20px;
+            font-weight: 700;
+            color: Theme.text-primary;
+            vertical-alignment: center;
+        }
+        // Close button
+        SquareButton {
+            width: 32px;
+            height: 32px;
+            bordered: false;
+            icon: Icons.xmark;
+            icon-size: 14px;
+            label: @tr("Close");
+            clicked => { root.cancel(); }
+        }
+    }
+
+    // Type chips — only when creating (changing the kind of an existing
+    // entry would drop its fields).
+    if !root.editing: HorizontalLayout {
+        spacing: 8px;
+        alignment: start;
+
+        KindChip {
+            icon: Icons.key;
+            text: @tr("Password");
+            selected: root.kind == Kind.login;
+            clicked => { root.kind = Kind.login; root.error = ""; }
+        }
+        KindChip {
+            icon: Icons.card;
+            text: @tr("Card");
+            selected: root.kind == Kind.card;
+            clicked => { root.kind = Kind.card; root.error = ""; }
+        }
+        KindChip {
+            icon: Icons.note;
+            text: @tr("Note");
+            selected: root.kind == Kind.note;
+            clicked => { root.kind = Kind.note; root.error = ""; }
+        }
+    }
+
+    // Name + folder picker
+    HorizontalLayout {
+        spacing: 12px;
+
+        Labeled {
+            horizontal-stretch: 3;
+            preferred-width: 300px;
+            label: @tr("Name");
+            title := Field {
+                text <=> root.f-title;
+                placeholder: root.kind == Kind.card ? @tr("e.g. Chase Visa")
+                    : root.kind == Kind.note ? @tr("e.g. Home Wi-Fi") : @tr("e.g. GitHub");
+                label: @tr("Name");
+                invalid: root.error != "" && self.text == "";
+                edited => { root.error = ""; }
+            }
+        }
+
+        if root.folders.length > 0: Labeled {
+            horizontal-stretch: 2;
+            preferred-width: 200px;
+            label: @tr("Folder");
+            FolderSelect {
+                folders: root.folders;
+                value <=> root.f-folder;
+                value-name <=> root.f-folder-name;
+                value-color <=> root.f-folder-color;
+            }
+        }
+    }
+
+    // ---- login ----
+    if root.kind == Kind.login: Labeled {
+        label: @tr("Username");
+        Field {
+            text <=> root.f-login;
+            placeholder: @tr("Email or username");
+            label: @tr("Username");
+        }
+    }
+
+    if root.kind == Kind.login: Labeled {
+        label: @tr("Password");
+        Field {
+            text <=> root.f-password;
+            mono: true;
+            label: @tr("Password");
+            placeholder: @tr("Password");
+            pad-y: 6px;
+            pad-x: 12px;
+
+            // Regenerate / copy password
+            IconAction {
+                icon: Icons.rotate;
+                icon-color: Theme.accent;
+                tooltip: @tr("Generate new");
+                clicked => { root.f-password = Backend.generate-password(root.length); }
+            }
+            IconAction {
+                icon: Icons.copy;
+                tooltip: @tr("Copy password");
+                clicked => { Backend.copy(root.f-password); }
+            }
+        }
+    }
+
+    // Strength
+    if root.kind == Kind.login: StrengthMeter {
+        bars: Backend.password-strength(root.f-password);
+    }
+
+    // Length
+    if root.kind == Kind.login: Labeled {
+        label: @tr("Length: {n} character" | "Length: {n} characters" % root.length);
+        spacing: 8px;
+        LengthSlider {
+            value <=> root.length;
+            changed(v) => { root.f-password = Backend.generate-password(v); }
+        }
+    }
+
+    // Site + 2FA secret side by side.
+    if root.kind == Kind.login: HorizontalLayout {
+        spacing: 12px;
+
+        Labeled {
+            // Same base width for both columns, so they split the row equally.
+            horizontal-stretch: 1;
+            preferred-width: 100px;
+            label: @tr("Website");
+            Field {
+                text <=> root.f-url;
+                placeholder: "https://";
+                label: @tr("Website");
+            }
+        }
+        Labeled {
+            horizontal-stretch: 1;
+            preferred-width: 100px;
+            label: @tr("2FA secret");
+            Field {
+                text <=> root.f-totp;
+                mono: true;
+                font-size: 13px;
+                placeholder: @tr("Base32, optional");
+                label: @tr("2FA secret (TOTP)");
+                invalid: root.error != "" && self.text != "";
+                edited => { root.error = ""; }
+            }
+        }
+    }
+
+    // ---- card ----
+    if root.kind == Kind.card: Labeled {
+        label: @tr("Card number");
+        number := Field {
+            text <=> root.f-number;
+            mask: 1;
+            mono: true;
+            label: @tr("Card number");
+            placeholder: "0000 0000 0000 0000";
+            // Warn only when the number is complete (16+ digits, 19 chars
+            // with spaces; Amex 15) or the field is left, not while typing.
+            invalid: !Backend.card-valid(root.f-number)
+                && (!self.has-focus || root.f-number.character-count >= 17);
+            edited => { root.error = ""; }
+
+            if Backend.card-brand(root.f-number) != "": Text {
+                text: Backend.card-brand(root.f-number);
+                font-size: 12px;
+                font-weight: 700;
+                color: Theme.accent;
+                vertical-alignment: center;
+            }
+        }
+        if number.invalid: Text {
+            text: @tr("The number fails validation — check the digits");
+            font-size: 12px;
+            color: Theme.warning;
+        }
+    }
+
+    if root.kind == Kind.card: HorizontalLayout {
+        spacing: 12px;
+
+        Labeled {
+            horizontal-stretch: 2;
+            preferred-width: 200px;
+            label: @tr("Cardholder");
+            Field {
+                text <=> root.f-holder;
+                label: @tr("Cardholder name");
+                placeholder: @tr("As printed on the card");
+            }
+        }
+        Labeled {
+            horizontal-stretch: 1;
+            preferred-width: 100px;
+            label: @tr("Expiry");
+            Field {
+                text <=> root.f-expiry;
+                mask: 2;
+                mono: true;
+                label: @tr("Expiry date");
+                placeholder: @tr("MM/YY");
+                invalid: root.error != "" && self.text != "";
+                edited => { root.error = ""; }
+            }
+        }
+    }
+
+    if root.kind == Kind.card: HorizontalLayout {
+        spacing: 12px;
+
+        Labeled {
+            horizontal-stretch: 1;
+            preferred-width: 100px;
+            label: "CVV / CVC";
+            Field {
+                text <=> root.f-cvv;
+                mask: 3;
+                password: true;
+                mono: true;
+                revealable: true;
+                label: "CVV";
+                placeholder: "•••";
+            }
+        }
+        Labeled {
+            horizontal-stretch: 1;
+            preferred-width: 100px;
+            label: "PIN";
+            Field {
+                text <=> root.f-pin;
+                mask: 3;
+                password: true;
+                mono: true;
+                revealable: true;
+                label: @tr("PIN");
+                placeholder: "••••";
+            }
+        }
+    }
+
+    // ---- notes (all kinds; the body of a note) ----
+    Labeled {
+        label: root.kind == Kind.note ? @tr("Note text") : @tr("Notes");
+        TextArea {
+            text <=> root.f-notes;
+            height: root.kind == Kind.note ? 260px : 72px;
+            label: @tr("Notes");
+            placeholder: root.kind == Kind.note ? @tr("Wi-Fi passwords, codes, addresses — everything is encrypted")
+                : @tr("Recovery codes, security answers…");
+        }
+    }
+
+    if root.error != "": Text {
+        text: root.error;
+        color: Theme.danger;
+        font-size: 12px;
+        wrap: word-wrap;
+    }
+
+    // Footer
+    HorizontalLayout {
+        alignment: end;
+        spacing: 10px;
+        padding-top: 2px;
+
+        SecondaryButton {
+            text: @tr("Cancel");
+            clicked => { root.cancel(); }
+        }
+        PrimaryButton {
+            text: @tr("Save");
+            pad-x: 18px;
+            pad-y: 10px;
+            clicked => { root.submit(); }
+        }
+    }
+}
+
+export component ConfirmDeleteModal inherits Modal {
+    in property <string> title;
+    callback confirm();
+    callback cancel();
+
+    card-width: 400px;
+
+    Text {
+        text: @tr("Delete item?");
+        font-size: 20px;
+        font-weight: 700;
+        color: Theme.text-primary;
+    }
+    Text {
+        text: @tr("“{0}” will be deleted permanently.", root.title);
+        wrap: word-wrap;
+        font-size: 13px;
+        color: Theme.text-secondary;
+    }
+    HorizontalLayout {
+        alignment: end;
+        spacing: 10px;
+        padding-top: 6px;
+
+        SecondaryButton {
+            text: @tr("Cancel");
+            clicked => { root.cancel(); }
+        }
+        PrimaryButton {
+            text: @tr("Delete");
+            danger: true;
+            pad-y: 10px;
+            clicked => { root.confirm(); }
+        }
+    }
+}

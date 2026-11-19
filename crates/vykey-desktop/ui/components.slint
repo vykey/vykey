@@ -1,0 +1,718 @@
+import { Theme, Icons } from "theme.slint";
+import { Tr } from "i18n.slint";
+
+export struct MaskResult {
+    text: string,
+    cursor: int,
+}
+
+// Callbacks implemented in Rust that any component may use.
+export global Backend {
+    // 0 = empty, 1..4 = strength bars
+    pure callback password-strength(string) -> int;
+    callback generate-password(int) -> string;
+    callback copy(string);
+    callback open-url(string);
+    // Payment system by card number prefix, "" if unknown.
+    pure callback card-brand(string) -> string;
+    // Luhn check (true for an empty number).
+    pure callback card-valid(string) -> bool;
+    // Input mask (see Field.mask): (mask, text, cursor byte offset, previous text).
+    pure callback mask-input(int, string, int, string) -> MaskResult;
+}
+
+// Sidebar folder; also the choices of folder pickers.
+export struct FolderItem {
+    id: string,
+    name: string,
+    color: color,
+    count: int,
+}
+
+// Folder dot colours, set from Rust (`FOLDER_COLORS`); dialogs pass an
+// index into this list.
+export global FolderPalette {
+    in-out property <[color]> colors;
+}
+
+// Entry kinds, same order as vykey_core::EntryKind.
+export global Kind {
+    out property <int> login: 0;
+    out property <int> card: 1;
+    out property <int> note: 2;
+}
+
+// Inside layouts set `size` (not width/height): the icon keeps its width,
+// takes the row height and is drawn vertically centred.
+export component Icon inherits Image {
+    in property <length> size: 16px;
+    image-fit: contain;
+    colorize: Theme.text-tertiary;
+    min-width: root.size;
+    max-width: root.size;
+    preferred-width: root.size;
+    min-height: root.size;
+    preferred-height: root.size;
+}
+
+// Small clickable icon (copy, eye, open link…).
+export component IconAction inherits Rectangle {
+    in property <image> icon;
+    in property <length> size: 14px;
+    in property <color> icon-color: Theme.text-tertiary;
+    in property <string> tooltip;
+    callback clicked;
+
+    width: root.size + 12px;
+    height: root.size + 12px;
+    border-radius: 7px;
+    background: ta.has-hover ? Theme.bg-hover : transparent;
+    accessible-role: button;
+    accessible-label: root.tooltip;
+    accessible-action-default => { root.clicked(); }
+
+    Icon {
+        source: root.icon;
+        width: root.size;
+        height: root.size;
+        colorize: ta.has-hover ? Theme.text-secondary : root.icon-color;
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// Square bordered icon button (detail header actions, modal close).
+export component SquareButton inherits Rectangle {
+    in property <image> icon;
+    in property <length> icon-size: 15px;
+    in property <color> icon-color: Theme.text-secondary;
+    in property <bool> bordered: true;
+    in property <string> label;
+    callback clicked;
+
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: ta.has-hover ? (bordered ? Theme.bg-hover : Theme.border-subtle) : (bordered ? Theme.bg-elevated : Theme.bg-hover);
+    border-width: bordered ? 1px : 0;
+    border-color: Theme.border-subtle;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
+
+    Icon {
+        source: root.icon;
+        width: root.icon-size;
+        height: root.icon-size;
+        colorize: root.icon-color;
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component PrimaryButton inherits Rectangle {
+    in property <string> text;
+    in property <image> icon;
+    in property <bool> has-icon: false;
+    in property <bool> enabled: true;
+    in property <length> pad-x: 16px;
+    in property <length> pad-y: 9px;
+    in property <length> font-size: 14px;
+    in property <bool> danger: false;
+    callback clicked;
+
+    property <color> base: root.danger ? Theme.danger : Theme.accent;
+    border-radius: 10px;
+    background: !root.enabled ? base.with-alpha(0.55) : ta.pressed ? base.darker(0.12) : ta.has-hover ? base.brighter(0.08) : base;
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { if root.enabled { root.clicked(); } }
+
+    HorizontalLayout {
+        padding-left: root.pad-x;
+        padding-right: root.pad-x;
+        padding-top: root.pad-y;
+        padding-bottom: root.pad-y;
+        spacing: 8px;
+        alignment: center;
+
+        if root.has-icon: Icon {
+            source: root.icon;
+            size: 13px;
+            colorize: #FFFFFF;
+        }
+        Text {
+            text: root.text;
+            color: #FFFFFF;
+            font-size: root.font-size;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => { root.clicked(); }
+    }
+}
+
+// Outlined button ("Edit", "Cancel").
+export component SecondaryButton inherits Rectangle {
+    in property <string> text;
+    in property <length> pad-x: 16px;
+    in property <length> pad-y: 10px;
+    in property <length> font-size: 14px;
+    in property <color> text-color: Theme.text-secondary;
+    callback clicked;
+
+    border-radius: 10px;
+    border-width: 1px;
+    border-color: Theme.border-subtle;
+    background: ta.has-hover ? Theme.bg-hover : transparent;
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-action-default => { root.clicked(); }
+
+    HorizontalLayout {
+        padding-left: root.pad-x;
+        padding-right: root.pad-x;
+        padding-top: root.pad-y;
+        padding-bottom: root.pad-y;
+        alignment: center;
+
+        Text {
+            text: root.text;
+            color: root.text-color;
+            font-size: root.font-size;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// Accent-soft pill button ("Fix").
+export component SoftButton inherits Rectangle {
+    in property <string> text;
+    callback clicked;
+
+    border-radius: 8px;
+    background: ta.has-hover ? Theme.accent.with-alpha(0.22) : Theme.accent-soft;
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-action-default => { root.clicked(); }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-top: 7px;
+        padding-bottom: 7px;
+
+        Text {
+            text: root.text;
+            color: Theme.accent;
+            font-size: 12px;
+            font-weight: 600;
+        }
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// Accent text link ("New vault", "All 9").
+export component LinkText inherits Text {
+    callback clicked;
+
+    color: ta.has-hover ? Theme.accent.brighter(0.15) : Theme.accent;
+    font-size: 13px;
+    font-weight: 600;
+    accessible-role: button;
+    accessible-action-default => { root.clicked(); }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// Single-line text field in the design's input style.
+export component Field inherits Rectangle {
+    in-out property <string> text <=> input.text;
+    in property <string> placeholder;
+    in property <bool> password: false;
+    in property <bool> mono: false;
+    in property <image> icon;
+    in property <bool> has-icon: false;
+    in property <bool> revealable: false;
+    in property <length> font-size: 14px;
+    in property <length> pad-y: 11px;
+    in property <length> pad-x: 12px;
+    in property <brush> fill: Theme.bg-base;
+    in property <bool> invalid: false;
+    in property <string> label;
+    // Formats while typing: 0 = none, 1 = card number ("4111 1111 …"),
+    // 2 = expiry ("MM/YY"), 3 = up to 4 digits (CVV, PIN).
+    in property <int> mask: 0;
+    out property <bool> has-focus: input.has-focus;
+    property <string> prev-text;
+    in-out property <bool> revealed: false;
+    callback accepted;
+    callback edited(string);
+
+    public function select-all() {
+        input.select-all();
+    }
+
+    border-radius: 10px;
+    background: root.fill;
+    border-width: 1px;
+    border-color: root.invalid ? Theme.danger : input.has-focus ? Theme.accent : Theme.border-subtle;
+    forward-focus: input;
+
+    HorizontalLayout {
+        padding-left: root.pad-x;
+        padding-right: root.revealable ? 6px : root.pad-x;
+        // The eye button carries 6px of its own padding.
+        padding-top: root.revealable ? max(0px, root.pad-y - 6px) : root.pad-y;
+        padding-bottom: root.revealable ? max(0px, root.pad-y - 6px) : root.pad-y;
+        spacing: 10px;
+
+        if root.has-icon: Icon {
+            source: root.icon;
+            size: 15px;
+        }
+
+        // Width must not depend on the typed text, otherwise fields that
+        // share a row resize while typing.
+        Rectangle {
+            horizontal-stretch: 1;
+            min-width: 0px;
+            preferred-width: 0px;
+            min-height: input.preferred-height;
+
+            input := TextInput {
+                width: 100%;
+                height: 100%;
+                vertical-alignment: center;
+                single-line: true;
+                font-size: root.font-size;
+                font-family: root.mono ? Theme.mono : Theme.font;
+                letter-spacing: root.password && !root.revealed ? 2px : 0;
+                color: Theme.text-primary;
+                selection-background-color: Theme.accent.with-alpha(0.35);
+                selection-foreground-color: Theme.text-primary;
+                input-type: root.password && !root.revealed ? InputType.password : InputType.text;
+                accessible-label: root.label != "" ? root.label : root.placeholder;
+                accepted => { root.accepted(); }
+                edited => {
+                    if root.mask != 0 {
+                        let r = Backend.mask-input(root.mask, self.text, self.cursor-position-byte-offset, root.prev-text);
+                        if r.text != self.text {
+                            self.text = r.text;
+                        }
+                        self.set-selection-offsets(r.cursor, r.cursor);
+                    }
+                    root.prev-text = self.text;
+                    root.edited(self.text);
+                }
+            }
+
+            if input.text == "": Text {
+                width: 100%;
+                height: 100%;
+                vertical-alignment: center;
+                text: root.placeholder;
+                color: Theme.text-tertiary;
+                font-size: root.font-size;
+                font-family: Theme.font;
+                overflow: elide;
+            }
+        }
+
+        @children
+
+        if root.revealable: IconAction {
+            icon: root.revealed ? Icons.eye-slash : Icons.eye;
+            size: 16px;
+            tooltip: root.revealed ? @tr("Hide password") : @tr("Show password");
+            clicked => { root.revealed = !root.revealed; }
+        }
+    }
+}
+
+// Multi-line text field (notes).
+export component TextArea inherits Rectangle {
+    in-out property <string> text <=> input.text;
+    in property <string> placeholder;
+    in property <string> label;
+
+    border-radius: 10px;
+    background: Theme.bg-base;
+    border-width: 1px;
+    border-color: input.has-focus ? Theme.accent : Theme.border-subtle;
+    forward-focus: input;
+    clip: true;
+
+    input := TextInput {
+        x: 12px;
+        y: 10px;
+        width: parent.width - 24px;
+        height: parent.height - 20px;
+        single-line: false;
+        wrap: word-wrap;
+        font-size: 14px;
+        color: Theme.text-primary;
+        selection-background-color: Theme.accent.with-alpha(0.35);
+        selection-foreground-color: Theme.text-primary;
+        accessible-label: root.label;
+    }
+
+    if input.text == "": Text {
+        x: 12px;
+        y: 10px;
+        width: parent.width - 24px;
+        text: root.placeholder;
+        color: Theme.text-tertiary;
+        font-size: 14px;
+    }
+}
+
+// Label above an input.
+export component FieldLabel inherits Text {
+    color: Theme.text-secondary;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+// Sidebar navigation row.
+export component NavItem inherits Rectangle {
+    in property <image> icon;
+    in property <string> text;
+    in property <string> count;
+    in property <bool> active: false;
+    callback clicked;
+
+    border-radius: 10px;
+    background: root.active ? Theme.bg-elevated : ta.has-hover ? Theme.bg-hover : transparent;
+    border-width: root.active ? 1px : 0;
+    border-color: Theme.border-subtle;
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-action-default => { root.clicked(); }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-top: 9px;
+        padding-bottom: 9px;
+        spacing: 12px;
+
+        Icon {
+            source: root.icon;
+            size: 16px;
+            colorize: root.active ? Theme.accent : Theme.text-tertiary;
+        }
+        Text {
+            horizontal-stretch: 1;
+            text: root.text;
+            font-size: 14px;
+            font-weight: root.active ? 600 : 500;
+            color: root.active ? Theme.text-primary : Theme.text-secondary;
+            vertical-alignment: center;
+        }
+        if root.count != "": Text {
+            text: root.count;
+            font-size: 12px;
+            color: Theme.text-tertiary;
+            vertical-alignment: center;
+        }
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// Letter tile used for entries (list rows, details).
+export component LetterAvatar inherits Rectangle {
+    in property <string> letter;
+    in property <color> tone;
+    in property <length> size: 38px;
+    in property <length> font-size: 15px;
+
+    width: root.size;
+    height: root.size;
+    border-radius: root.size * 0.29;
+    background: root.tone.with-alpha(0.15);
+
+    Text {
+        text: root.letter;
+        color: root.tone;
+        font-size: root.font-size;
+        font-weight: 700;
+    }
+}
+
+// Gradient circle with initials (unlock screen, sidebar vault card).
+export component InitialsAvatar inherits Rectangle {
+    in property <string> initials;
+    in property <length> size: 34px;
+    in property <length> font-size: 13px;
+
+    width: root.size;
+    height: root.size;
+    border-radius: root.size / 2;
+    background: Theme.avatar-gradient;
+
+    Text {
+        text: root.initials;
+        color: #FFFFFF;
+        font-size: root.font-size;
+        font-weight: 700;
+    }
+}
+
+// Gradient logo tile with shield (unlock screen, sidebar).
+export component LogoMark inherits Rectangle {
+    in property <length> size: 34px;
+
+    width: root.size;
+    height: root.size;
+    border-radius: root.size * 0.3;
+    background: Theme.logo-gradient;
+
+    Icon {
+        source: Icons.shield-halved;
+        width: root.size * 0.5;
+        height: root.size * 0.5;
+        colorize: #FFFFFF;
+    }
+}
+
+export component Card inherits Rectangle {
+    background: Theme.bg-elevated;
+    border-color: Theme.border-subtle;
+    border-width: 1px;
+    border-radius: 16px;
+}
+
+export component Divider inherits Rectangle {
+    height: 1px;
+    background: Theme.border-subtle;
+}
+
+// Password strength: four bars + label.
+export component StrengthMeter inherits HorizontalLayout {
+    in property <int> bars;
+
+    property <color> tone: root.bars <= 1 ? Theme.danger : root.bars == 2 ? Theme.warning : Theme.success;
+    spacing: 6px;
+    alignment: stretch;
+
+    for i in 4: Rectangle {
+        horizontal-stretch: 1;
+        height: 5px;
+        border-radius: 3px;
+        background: i < root.bars ? root.tone : Theme.bg-hover;
+        animate background { duration: 150ms; }
+    }
+
+    Text {
+        text: root.bars == 0 ? "" : Tr.strength(root.bars);
+        min-width: 100px;
+        horizontal-alignment: right;
+        color: root.tone;
+        font-size: 12px;
+        font-weight: 600;
+    }
+}
+
+// Slider: accent fill, white thumb, rest track.
+export component LengthSlider inherits Rectangle {
+    in property <int> minimum: 8;
+    in property <int> maximum: 64;
+    in-out property <int> value: 16;
+    callback changed(int);
+
+    property <float> ratio: (root.value - root.minimum) / (root.maximum - root.minimum);
+    property <length> thumb: 16px;
+
+    height: 20px;
+    accessible-role: slider;
+    accessible-label: @tr("Password length");
+    accessible-value: root.value;
+    accessible-value-minimum: root.minimum;
+    accessible-value-maximum: root.maximum;
+    accessible-action-increment => { root.set-value(root.value + 1); }
+    accessible-action-decrement => { root.set-value(root.value - 1); }
+
+    function set-value(v: int) {
+        let clamped = Math.clamp(v, root.minimum, root.maximum);
+        if clamped != root.value {
+            root.value = clamped;
+            root.changed(clamped);
+        }
+    }
+
+    function set-from-x(x: length) {
+        root.set-value(Math.round(root.minimum + (x - root.thumb / 2) / (root.width - root.thumb) * (root.maximum - root.minimum)));
+    }
+
+    Rectangle {
+        y: (parent.height - 4px) / 2;
+        height: 4px;
+        width: 100%;
+        border-radius: 2px;
+        background: Theme.bg-hover;
+    }
+
+    Rectangle {
+        x: 0;
+        y: (parent.height - 4px) / 2;
+        height: 4px;
+        width: root.thumb / 2 + root.ratio * (parent.width - root.thumb);
+        border-radius: 2px;
+        background: Theme.accent;
+    }
+
+    Rectangle {
+        x: root.ratio * (parent.width - root.thumb);
+        width: root.thumb;
+        height: root.thumb;
+        border-radius: root.thumb / 2;
+        background: #FFFFFF;
+        border-width: Theme.dark ? 0 : 1px;
+        border-color: Theme.border-subtle;
+        drop-shadow-color: #00000055;
+        drop-shadow-blur: 6px;
+        drop-shadow-offset-y: 2px;
+    }
+
+    TouchArea {
+        mouse-cursor: pointer;
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.down {
+                root.set-from-x(self.mouse-x);
+            }
+        }
+        moved => {
+            if self.pressed {
+                root.set-from-x(self.mouse-x);
+            }
+        }
+        scroll-event(e) => {
+            if e.delta-y > 0 {
+                root.set-value(root.value + 1);
+            } else if e.delta-y < 0 {
+                root.set-value(root.value - 1);
+            }
+            accept
+        }
+    }
+}
+
+// Folder colour dot.
+export component FolderDot inherits Rectangle {
+    in property <color> tone;
+    in property <length> size: 8px;
+    width: root.size;
+    height: root.size;
+    border-radius: root.size / 2;
+    background: root.tone;
+}
+
+component FolderOption inherits Rectangle {
+    in property <FolderItem> item;
+    in property <bool> selected;
+    callback clicked;
+
+    border-radius: 8px;
+    background: ta.has-hover ? Theme.bg-hover : transparent;
+    accessible-role: button;
+    accessible-label: root.item.name;
+    accessible-checked: root.selected;
+    accessible-action-default => { root.clicked(); }
+
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        padding-top: 8px;
+        padding-bottom: 8px;
+        spacing: 10px;
+
+        if root.item.id != "": VerticalLayout {
+            alignment: center;
+            FolderDot { tone: root.item.color; }
+        }
+        if root.item.id == "": Icon {
+            source: Icons.xmark;
+            size: 8px;
+        }
+        Text {
+            horizontal-stretch: 1;
+            text: root.item.name;
+            font-size: 13px;
+            font-weight: root.selected ? 600 : 500;
+            color: root.item.id == "" ? Theme.text-secondary : Theme.text-primary;
+            overflow: elide;
+            vertical-alignment: center;
+        }
+        if root.selected: Icon {
+            source: Icons.check;
+            size: 11px;
+            colorize: Theme.accent;
+        }
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// Menu body listing "No folder" and the folders; put it in a PopupWindow.
+export component FolderMenu inherits Rectangle {
+    in property <[FolderItem]> folders;
+    in property <string> current;
+    // The chosen folder; id "" = "No folder".
+    callback picked(FolderItem);
+
+    background: Theme.bg-elevated;
+    border-radius: 12px;
+    border-width: 1px;
+    border-color: Theme.border-subtle;
+    drop-shadow-color: Theme.shadow-modal;
+    drop-shadow-blur: 24px;
+    drop-shadow-offset-y: 8px;
+
+    VerticalLayout {
+        padding: 6px;
+
+        none := FolderOption {
+            item: { id: "", name: @tr("No folder"), color: transparent, count: 0 };
+            selected: root.current == "";
+            clicked => { root.picked(none.item); }
+        }
+        for folder in root.folders: FolderOption {
+            item: folder;
+            selected: root.current == folder.id;
+            clicked => { root.picked(folder); }
+        }
+    }
+}

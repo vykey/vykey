@@ -1,0 +1,96 @@
+// Strings that Rust composes (errors, toasts, dates, audit texts). They live
+// here, not in Rust, so that one gettext catalogue covers the whole app:
+// Rust calls `Tr::invoke_*()` and gets the text in the current language.
+// English is the source language; translations are in
+// translations/<lang>/LC_MESSAGES/vykey-desktop.po.
+
+export global Tr {
+    // ---- errors ----
+    public pure function wrong-password() -> string { @tr("Wrong master password") }
+    public pure function vault-exists() -> string { @tr("A vault with this name already exists") }
+    public pure function folder-exists() -> string { @tr("A folder with this name already exists") }
+    public pure function folder-not-found() -> string { @tr("Folder not found") }
+    public pure function schema-too-new() -> string {
+        @tr("The database was created by a newer version of vykey — please update the app")
+    }
+    public pure function error(details: string) -> string { @tr("Error: {0}", details) }
+    public pure function db-unavailable() -> string { @tr("The database is unavailable") }
+    public pure function db-path-unknown() -> string { @tr("Could not determine the database path") }
+    public pure function totp-invalid() -> string {
+        @tr("The 2FA secret must be Base32 (letters A–Z and digits 2–7)")
+    }
+    public pure function expiry-invalid() -> string { @tr("Enter the expiry as MM/YY, e.g. 08/28") }
+    public pure function enter-name() -> string { @tr("Enter a name") }
+
+    // ---- toasts ----
+    public pure function item-saved() -> string { @tr("Item saved") }
+    public pure function item-deleted() -> string { @tr("Item deleted") }
+    public pure function vault-renamed() -> string { @tr("Vault renamed") }
+    public pure function vault-deleted(name: string) -> string { @tr("Vault “{0}” deleted", name) }
+    public pure function folder-created() -> string { @tr("Folder created") }
+    public pure function folder-saved() -> string { @tr("Folder saved") }
+    public pure function folder-deleted(name: string) -> string { @tr("Folder “{0}” deleted", name) }
+    public pure function moved-to-folder(name: string) -> string { @tr("Moved to “{0}”", name) }
+    public pure function removed-from-folder() -> string { @tr("Removed from folder") }
+    public pure function clipboard-unavailable() -> string { @tr("Clipboard is unavailable") }
+    public pure function copied() -> string { @tr("Copied · clipboard clears in 30 s") }
+    public pure function copy-failed() -> string { @tr("Could not copy") }
+    public pure function settings-save-failed() -> string { @tr("Could not save settings") }
+
+    // ---- entries ----
+    // List subtitle of a card whose payment system is unknown.
+    public pure function card() -> string { @tr("Card") }
+    public pure function created(date: string) -> string { @tr("Created {0}", date) }
+    public pure function created-modified(date: string, ago: string) -> string {
+        @tr("Created {0}, modified {1}", date, ago)
+    }
+
+    // ---- dates ----
+    // Abbreviated month name, month0 = 0..11.
+    public pure function month(month0: int) -> string {
+        month0 == 0 ? @tr("Jan") : month0 == 1 ? @tr("Feb") : month0 == 2 ? @tr("Mar")
+            : month0 == 3 ? @tr("Apr") : month0 == 4 ? @tr("May") : month0 == 5 ? @tr("Jun")
+            : month0 == 6 ? @tr("Jul") : month0 == 7 ? @tr("Aug") : month0 == 8 ? @tr("Sep")
+            : month0 == 9 ? @tr("Oct") : month0 == 10 ? @tr("Nov") : @tr("Dec")
+    }
+    public pure function just-now() -> string { @tr("just now") }
+    public pure function minutes-ago(n: int) -> string { @tr("{n} minute ago" | "{n} minutes ago" % n) }
+    public pure function hours-ago(n: int) -> string { @tr("{n} hour ago" | "{n} hours ago" % n) }
+    public pure function yesterday() -> string { @tr("yesterday") }
+    public pure function days-ago(n: int) -> string { @tr("{n} day ago" | "{n} days ago" % n) }
+
+    // ---- security ----
+    // "GitHub and Amazon", "GitHub, Amazon and 2 more".
+    public pure function list-two(a: string, b: string) -> string { @tr("{0} and {1}", a, b) }
+    public pure function list-more(a: string, b: string, n: int) -> string {
+        @tr("{0}, {1} and {n} more" | "{0}, {1} and {n} more" % n, a, b)
+    }
+    public pure function issue-weak() -> string { @tr("Weak password") }
+    public pure function issue-reused(others: string) -> string { @tr("Password also used in {0}", others) }
+    public pure function issue-weak-reused(others: string) -> string {
+        @tr("Weak password, also used in {0}", others)
+    }
+    public pure function issue-stale() -> string { @tr("Password unchanged for over a year") }
+    public pure function issue-card-expired() -> string { @tr("The card has expired") }
+    public pure function issue-card-expiring() -> string { @tr("The card expires soon") }
+    // Security score text = score-level + " " + score-issues.
+    // level: 0 = excellent, 1 = good, 2 = fair, 3 = weak.
+    public pure function score-level(level: int) -> string {
+        level == 0 ? @tr("Excellent protection.") : level == 1 ? @tr("Good protection.")
+            : level == 2 ? @tr("Fair protection.") : @tr("Weak protection.")
+    }
+    public pure function score-issues(n: int) -> string {
+        n == 0 ? @tr("No issues found.")
+            : @tr("Fix {n} risk below to improve it." | "Fix {n} risks below to improve it." % n)
+    }
+    public pure function audited-at(time: string) -> string { @tr("Vault audited today at {0}", time) }
+
+    // ---- settings ----
+    // First entry of the language list: follow the system language.
+    public pure function system-language() -> string { @tr("language" => "System") }
+
+    // ---- password strength ----
+    public pure function strength(bars: int) -> string {
+        bars <= 1 ? @tr("Weak") : bars == 2 ? @tr("Fair") : bars == 3 ? @tr("Strong") : @tr("Very strong")
+    }
+}

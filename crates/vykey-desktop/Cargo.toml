@@ -1,0 +1,30 @@
+[package]
+name = "vykey-desktop"
+description = "Desktop GUI for the vykey password manager"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "vykey"
+path = "src/main.rs"
+
+[dependencies]
+arboard = { version = "3.7.0", features = ["wayland-data-control"] }
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
+vykey-core.workspace = true
+# Software renderer by default (see `run`): no GPU drivers in the process,
+# ~30 MB RSS instead of ~270 MB. FemtoVG (OpenGL) is compiled in as an
+# opt-in: SLINT_BACKEND=winit-femtovg.
+slint = { version = "1.19", default-features = false, features = ["std", "backend-winit", "renderer-software", "renderer-femtovg", "accessibility", "compat-1-2"] }
+sys-locale = "0.3.2"
+webbrowser = "1.2.7"
+
+[build-dependencies]
+slint-build = "1.19"
+
+[lints]
+workspace = true

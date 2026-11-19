@@ -1,0 +1,331 @@
+// Vault and folder dialogs: create / rename / delete, built from the same
+// Modal, fields and buttons as the entry dialogs.
+
+import { Theme, Icons } from "theme.slint";
+import { Field, FieldLabel, PrimaryButton, SecondaryButton, SquareButton, Icon, FolderPalette } from "components.slint";
+import { Modal } from "entry-form.slint";
+
+component DialogHeader inherits HorizontalLayout {
+    in property <string> title;
+    callback close;
+
+    Text {
+        horizontal-stretch: 1;
+        text: root.title;
+        font-size: 20px;
+        font-weight: 700;
+        color: Theme.text-primary;
+        vertical-alignment: center;
+    }
+    SquareButton {
+        width: 32px;
+        height: 32px;
+        bordered: false;
+        icon: Icons.xmark;
+        icon-size: 14px;
+        label: @tr("Close");
+        clicked => { root.close(); }
+    }
+}
+
+export component RenameVaultModal inherits Modal {
+    in property <string> current-name;
+    in-out property <string> error;
+    callback save(string);
+    callback cancel();
+
+    card-width: 420px;
+
+    function submit() {
+        if name.text == "" {
+            root.error = @tr("Enter a name");
+        } else if name.text == root.current-name {
+            root.cancel();
+        } else {
+            root.save(name.text);
+        }
+    }
+
+    init => {
+        name.text = root.current-name;
+        name.focus();
+        name.select-all();
+    }
+
+    DialogHeader {
+        title: @tr("Rename vault");
+        close => { root.cancel(); }
+    }
+
+    VerticalLayout {
+        spacing: 6px;
+        FieldLabel { text: @tr("Name"); }
+        name := Field {
+            label: @tr("Vault name");
+            placeholder: @tr("e.g. Work");
+            invalid: root.error != "";
+            edited => { root.error = ""; }
+            accepted => { root.submit(); }
+        }
+    }
+
+    if root.error != "": Text {
+        text: root.error;
+        color: Theme.danger;
+        font-size: 12px;
+        wrap: word-wrap;
+    }
+
+    HorizontalLayout {
+        alignment: end;
+        spacing: 10px;
+        padding-top: 2px;
+
+        SecondaryButton {
+            text: @tr("Cancel");
+            clicked => { root.cancel(); }
+        }
+        PrimaryButton {
+            text: @tr("Save");
+            pad-x: 18px;
+            pad-y: 10px;
+            clicked => { root.submit(); }
+        }
+    }
+}
+
+export component DeleteVaultModal inherits Modal {
+    in property <string> vault-name;
+    in property <int> entry-count;
+    in property <bool> busy;
+    in-out property <string> error;
+    callback confirm(string /* master password */);
+    callback cancel();
+
+    card-width: 440px;
+
+    function submit() {
+        if !root.busy && pw.text != "" {
+            root.confirm(pw.text);
+        }
+    }
+
+    init => { pw.focus(); }
+
+    DialogHeader {
+        title: @tr("Delete vault?");
+        close => { root.cancel(); }
+    }
+
+    // Danger-toned warning banner.
+    Rectangle {
+        border-radius: 12px;
+        background: Theme.danger.with-alpha(0.08);
+        border-width: 1px;
+        border-color: Theme.danger.with-alpha(0.3);
+
+        HorizontalLayout {
+            padding: 14px;
+            spacing: 12px;
+
+            Icon {
+                source: Icons.warning;
+                size: 16px;
+                colorize: Theme.danger;
+            }
+            Text {
+                horizontal-stretch: 1;
+                text: root.entry-count == 0
+                    ? @tr("Vault “{0}” will be deleted permanently.", root.vault-name)
+                    : @tr("Vault “{0}” and its {n} item will be deleted permanently." | "Vault “{0}” and its {n} items will be deleted permanently." % root.entry-count, root.vault-name);
+                wrap: word-wrap;
+                font-size: 13px;
+                color: Theme.text-primary;
+            }
+        }
+    }
+
+    VerticalLayout {
+        spacing: 6px;
+        FieldLabel { text: @tr("Enter the master password to confirm"); }
+        pw := Field {
+            password: true;
+            mono: true;
+            revealable: true;
+            label: @tr("Master password");
+            placeholder: @tr("Master password");
+            invalid: root.error != "";
+            edited => { root.error = ""; }
+            accepted => { root.submit(); }
+        }
+    }
+
+    if root.error != "": Text {
+        text: root.error;
+        color: Theme.danger;
+        font-size: 12px;
+        wrap: word-wrap;
+    }
+
+    HorizontalLayout {
+        alignment: end;
+        spacing: 10px;
+        padding-top: 2px;
+
+        SecondaryButton {
+            text: @tr("Cancel");
+            clicked => { root.cancel(); }
+        }
+        PrimaryButton {
+            text: root.busy ? @tr("Checking…") : @tr("Delete vault");
+            danger: true;
+            enabled: !root.busy && pw.text != "";
+            pad-y: 10px;
+            clicked => { root.submit(); }
+        }
+    }
+}
+
+// New folder (folder-id == "") or rename / recolour an existing one.
+export component FolderModal inherits Modal {
+    in property <string> folder-id;
+    in property <string> current-name;
+    // Index into FolderPalette.colors.
+    in property <int> current-color;
+    in-out property <string> error;
+    callback save(string /* name */, int /* colour index */);
+    callback cancel();
+
+    property <int> tone-index;
+
+    card-width: 420px;
+
+    function submit() {
+        if name.text == "" {
+            root.error = @tr("Enter a name");
+            name.focus();
+        } else {
+            root.save(name.text, root.tone-index);
+        }
+    }
+
+    init => {
+        name.text = root.current-name;
+        root.tone-index = root.current-color;
+        name.focus();
+        name.select-all();
+    }
+
+    DialogHeader {
+        title: root.folder-id == "" ? @tr("New folder") : @tr("Edit folder");
+        close => { root.cancel(); }
+    }
+
+    VerticalLayout {
+        spacing: 6px;
+        FieldLabel { text: @tr("Name"); }
+        name := Field {
+            label: @tr("Folder name");
+            placeholder: @tr("e.g. Work");
+            invalid: root.error != "";
+            edited => { root.error = ""; }
+            accepted => { root.submit(); }
+        }
+    }
+
+    VerticalLayout {
+        spacing: 8px;
+        FieldLabel { text: @tr("Color"); }
+        HorizontalLayout {
+            alignment: start;
+            spacing: 6px;
+
+            for tone[i] in FolderPalette.colors: Rectangle {
+                width: 30px;
+                height: 30px;
+                border-radius: 15px;
+                border-width: 2px;
+                border-color: i == root.tone-index ? tone : swatch-ta.has-hover ? Theme.border-subtle : transparent;
+                accessible-role: button;
+                accessible-label: @tr("Color {0}", i + 1);
+                accessible-checked: i == root.tone-index;
+                accessible-action-default => { root.tone-index = i; }
+
+                Rectangle {
+                    width: 18px;
+                    height: 18px;
+                    border-radius: 9px;
+                    background: tone;
+                }
+
+                swatch-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.tone-index = i; }
+                }
+            }
+        }
+    }
+
+    if root.error != "": Text {
+        text: root.error;
+        color: Theme.danger;
+        font-size: 12px;
+        wrap: word-wrap;
+    }
+
+    HorizontalLayout {
+        alignment: end;
+        spacing: 10px;
+        padding-top: 2px;
+
+        SecondaryButton {
+            text: @tr("Cancel");
+            clicked => { root.cancel(); }
+        }
+        PrimaryButton {
+            text: root.folder-id == "" ? @tr("Create") : @tr("Save");
+            pad-x: 18px;
+            pad-y: 10px;
+            clicked => { root.submit(); }
+        }
+    }
+}
+
+// Deleting a folder keeps its entries (they are left without a folder).
+export component DeleteFolderModal inherits Modal {
+    in property <string> folder-name;
+    in property <int> entry-count;
+    callback confirm();
+    callback cancel();
+
+    card-width: 420px;
+
+    DialogHeader {
+        title: @tr("Delete folder?");
+        close => { root.cancel(); }
+    }
+    Text {
+        text: root.entry-count == 0
+            ? @tr("Folder “{0}” is empty.", root.folder-name)
+            : @tr("Folder “{0}” will be deleted. {n} item stays in the vault without a folder." | "Folder “{0}” will be deleted. {n} items stay in the vault without a folder." % root.entry-count, root.folder-name);
+        wrap: word-wrap;
+        font-size: 13px;
+        color: Theme.text-secondary;
+    }
+    HorizontalLayout {
+        alignment: end;
+        spacing: 10px;
+        padding-top: 6px;
+
+        SecondaryButton {
+            text: @tr("Cancel");
+            clicked => { root.cancel(); }
+        }
+        PrimaryButton {
+            text: @tr("Delete");
+            danger: true;
+            pad-y: 10px;
+            clicked => { root.confirm(); }
+        }
+    }
+}

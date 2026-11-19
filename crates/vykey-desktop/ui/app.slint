@@ -1,0 +1,320 @@
+// vykey desktop UI: main window, screens and dialogs.
+// Flow: unlock → vault ⇄ security ⇄ settings; add → new-item modal.
+
+import { Theme, Icons } from "theme.slint";
+import { Backend, Icon, MaskResult, FolderItem, FolderPalette } from "components.slint";
+import { UnlockScreen, VaultItem } from "unlock.slint";
+import { Sidebar, Page } from "sidebar.slint";
+import { SettingsMain } from "settings.slint";
+import { Tr } from "i18n.slint";
+import { VaultMain, EntryItem, EntryDetail, DeleteFx } from "vault.slint";
+import { EntryFormModal, ConfirmDeleteModal, EntryForm } from "entry-form.slint";
+import { SecurityMain, SecurityStats, Issue } from "security.slint";
+import { RenameVaultModal, DeleteVaultModal, FolderModal, DeleteFolderModal } from "vault-dialogs.slint";
+
+export { Tr, Backend, DeleteFx, MaskResult, Theme, VaultItem, EntryItem, EntryDetail, EntryForm, SecurityStats, Issue, Page, FolderItem, FolderPalette }
+
+export enum Screen { unlock, main }
+
+export component AppWindow inherits Window {
+    title: "vykey";
+    icon: @image-url("icons/shield-halved.svg");
+    preferred-width: 1280px;
+    preferred-height: 820px;
+    min-width: 1000px;
+    min-height: 700px;
+    background: Theme.bg-base;
+    default-font-family: Theme.font;
+
+    // ---- unlock ----
+    in-out property <Screen> screen: Screen.unlock;
+    in property <[VaultItem]> vaults;
+    in-out property <int> vault-index;
+    in property <bool> busy;
+    in-out property <string> unlock-error;
+    in-out property <bool> create-mode;
+    callback unlock(string, string);
+    callback create-vault(string, string);
+
+    // ---- main ----
+    in-out property <Page> page: Page.vault;
+    in property <string> vault-name;
+    in property <string> vault-initials;
+    in-out property <string> query;
+    in property <[EntryItem]> items;
+    in property <int> total;
+    in property <int> favorite-count;
+    in property <int> card-count;
+    in property <int> note-count;
+    // 0 = all, 1 = favourites, 2 = cards, 3 = notes, 4 = folder
+    in-out property <int> filter;
+    in property <[FolderItem]> folders;
+    in property <string> active-folder;
+    in property <string> active-folder-name;
+    in property <bool> sort-by-date;
+    in property <string> selected-id;
+    in property <EntryDetail> detail;
+    in property <bool> has-detail;
+    in property <string> totp-code;
+    in property <int> totp-remaining;
+    in property <string> totp-raw;
+    in property <[int]> totp-digits;
+    in-out property <bool> password-revealed;
+    in property <SecurityStats> stats;
+    in property <[Issue]> issues;
+    callback lock();
+    callback navigate(Page);
+    // Theme.mode: 0 = system, 1 = light, 2 = dark; applied and saved by Rust.
+    callback set-theme(int);
+    // Index into language-names (0 = system); applied and saved by Rust.
+    in property <int> language-mode;
+    in property <[string]> language-names;
+    callback set-language(int);
+    callback select-filter(int);
+    callback select-folder(string);
+    callback toggle-favorite(string);
+    callback move-to-folder(string /* entry id */, string /* folder id */);
+    // kind for a new entry (0 login, 1 card, 2 note)
+    callback new-entry(int);
+    callback search(string);
+    callback select(string);
+    callback toggle-sort();
+    callback activity();
+
+    // ---- modals ----
+    in-out property <bool> form-open;
+    in property <EntryForm> form-initial;
+    in-out property <string> form-error;
+    in-out property <bool> delete-open;
+    in property <string> delete-title;
+    callback open-form(string /* entry id, "" = new */);
+    callback save-entry(EntryForm);
+    callback request-delete(string);
+    callback confirm-delete();
+
+    // ---- vault management ----
+    // 0 = none, 1 = rename, 2 = delete
+    in-out property <int> vault-dialog;
+    in-out property <string> vault-dialog-error;
+    in property <bool> vault-dialog-busy;
+    in property <int> vault-entry-count;
+    callback vault-action(int);
+    callback rename-vault(string);
+    callback delete-vault(string);
+
+    // ---- folders ----
+    // 0 = none, 1 = create / edit, 2 = delete
+    in-out property <int> folder-dialog;
+    in property <string> folder-edit-id;
+    in property <string> folder-edit-name;
+    in property <int> folder-edit-color;
+    in property <int> folder-delete-count;
+    in-out property <string> folder-dialog-error;
+    callback new-folder();
+    callback folder-action(string, int);
+    callback save-folder(string /* id, "" = new */, string /* name */, int /* colour index */);
+    callback confirm-delete-folder();
+
+    // ---- toast ----
+    in property <string> toast;
+
+    property <int> search-focus-request;
+
+    function close-modals() {
+        root.form-open = false;
+        root.delete-open = false;
+        root.vault-dialog = 0;
+        root.folder-dialog = 0;
+    }
+
+    FocusScope {
+        capture-key-pressed(e) => {
+            root.activity();
+            if root.screen == Screen.main && e.modifiers.control {
+                // Latin letters plus the Cyrillic ones on the same keys (ЙЦУКЕН),
+                // so the shortcuts also work with a Russian keyboard layout.
+                if e.text == "k" || e.text == "K" || e.text == "л" || e.text == "Л" {
+                    if !root.form-open && !root.delete-open {
+                        root.page = Page.vault;
+                        root.search-focus-request += 1;
+                    }
+                    return accept;
+                }
+                if e.text == "l" || e.text == "L" || e.text == "д" || e.text == "Д" {
+                    root.lock();
+                    return accept;
+                }
+                if e.text == "n" || e.text == "N" || e.text == "т" || e.text == "Т" {
+                    if !root.form-open && !root.delete-open {
+                        root.new-entry(root.filter == 2 ? 1 : root.filter == 3 ? 2 : 0);
+                    }
+                    return accept;
+                }
+            }
+            if e.text == Key.Escape && (root.form-open || root.delete-open || root.vault-dialog != 0 || root.folder-dialog != 0) {
+                root.close-modals();
+                return accept;
+            }
+            reject
+        }
+
+        if root.screen == Screen.unlock: UnlockScreen {
+            vaults: root.vaults;
+            vault-index <=> root.vault-index;
+            busy: root.busy;
+            error <=> root.unlock-error;
+            create-mode <=> root.create-mode;
+            unlock(vault, password) => { root.unlock(vault, password); }
+            create(name, password) => { root.create-vault(name, password); }
+        }
+
+        if root.screen == Screen.main: HorizontalLayout {
+            Sidebar {
+                search-focus-request: root.search-focus-request;
+                page: root.page;
+                entry-count: root.total;
+                favorite-count: root.favorite-count;
+                card-count: root.card-count;
+                note-count: root.note-count;
+                filter: root.filter;
+                select-filter(f) => { root.select-filter(f); }
+                folders: root.folders;
+                active-folder: root.active-folder;
+                select-folder(id) => { root.select-folder(id); }
+                new-folder => { root.new-folder(); }
+                folder-action(id, a) => { root.folder-action(id, a); }
+                issue-count: root.issues.length;
+                vault-name: root.vault-name;
+                vault-initials: root.vault-initials;
+                vault-subtitle: @tr("Local vault");
+                query <=> root.query;
+                navigate(p) => { root.navigate(p); }
+                lock => { root.lock(); }
+                vault-action(a) => { root.vault-action(a); }
+                search-edited(q) => { root.search(q); }
+            }
+
+            if root.page == Page.vault: VaultMain {
+                horizontal-stretch: 1;
+                items: root.items;
+                total: root.total;
+                query: root.query;
+                sort-by-date: root.sort-by-date;
+                selected-id: root.selected-id;
+                detail: root.detail;
+                has-detail: root.has-detail;
+                totp-code: root.totp-code;
+                totp-remaining: root.totp-remaining;
+                totp-raw: root.totp-raw;
+                totp-digits: root.totp-digits;
+                password-revealed <=> root.password-revealed;
+                filter: root.filter;
+                folders: root.folders;
+                folder-name: root.active-folder-name;
+                move-to-folder(id, folder) => { root.move-to-folder(id, folder); }
+                select(id) => { root.select(id); }
+                add => { root.new-entry(root.filter == 2 ? 1 : root.filter == 3 ? 2 : 0); }
+                toggle-favorite(id) => { root.toggle-favorite(id); }
+                edit(id) => { root.open-form(id); }
+                delete(id) => { root.request-delete(id); }
+                toggle-sort => { root.toggle-sort(); }
+            }
+
+            if root.page == Page.security: SecurityMain {
+                horizontal-stretch: 1;
+                stats: root.stats;
+                issues: root.issues;
+                fix(id) => { root.open-form(id); }
+            }
+
+            if root.page == Page.settings: SettingsMain {
+                horizontal-stretch: 1;
+                theme-mode: Theme.mode;
+                set-theme(m) => { root.set-theme(m); }
+                language-mode: root.language-mode;
+                language-names: root.language-names;
+                set-language(l) => { root.set-language(l); }
+            }
+        }
+
+        if root.form-open: EntryFormModal {
+            initial: root.form-initial;
+            folders: root.folders;
+            error <=> root.form-error;
+            save(form) => { root.save-entry(form); }
+            cancel => { root.form-open = false; }
+        }
+
+        if root.delete-open: ConfirmDeleteModal {
+            title: root.delete-title;
+            confirm => { root.confirm-delete(); }
+            cancel => { root.delete-open = false; }
+        }
+
+        if root.vault-dialog == 1: RenameVaultModal {
+            current-name: root.vault-name;
+            error <=> root.vault-dialog-error;
+            save(name) => { root.rename-vault(name); }
+            cancel => { root.vault-dialog = 0; }
+        }
+
+        if root.vault-dialog == 2: DeleteVaultModal {
+            vault-name: root.vault-name;
+            entry-count: root.vault-entry-count;
+            busy: root.vault-dialog-busy;
+            error <=> root.vault-dialog-error;
+            confirm(pw) => { root.delete-vault(pw); }
+            cancel => { root.vault-dialog = 0; }
+        }
+
+        if root.folder-dialog == 1: FolderModal {
+            folder-id: root.folder-edit-id;
+            current-name: root.folder-edit-name;
+            current-color: root.folder-edit-color;
+            error <=> root.folder-dialog-error;
+            save(name, color) => { root.save-folder(root.folder-edit-id, name, color); }
+            cancel => { root.folder-dialog = 0; }
+        }
+
+        if root.folder-dialog == 2: DeleteFolderModal {
+            folder-name: root.folder-edit-name;
+            entry-count: root.folder-delete-count;
+            confirm => { root.confirm-delete-folder(); }
+            cancel => { root.folder-dialog = 0; }
+        }
+
+        // Toast: copy confirmation and other short notices.
+        if root.toast != "": Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: parent.height - self.height - 28px;
+            width: toast-layout.preferred-width;
+            height: toast-layout.preferred-height;
+            border-radius: 999px;
+            background: Theme.dark ? #F2F2F5 : #17171C;
+            drop-shadow-color: #00000040;
+            drop-shadow-blur: 16px;
+            drop-shadow-offset-y: 6px;
+
+            toast-layout := HorizontalLayout {
+                padding-left: 14px;
+                padding-right: 16px;
+                padding-top: 9px;
+                padding-bottom: 9px;
+                spacing: 8px;
+
+                Icon {
+                    source: Icons.check;
+                    size: 12px;
+                    colorize: Theme.dark ? #1F9E66 : #3DD68C;
+                }
+                Text {
+                    text: root.toast;
+                    font-size: 13px;
+                    font-weight: 500;
+                    color: Theme.dark ? #17171C : #F2F2F5;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+}

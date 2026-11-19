@@ -1,0 +1,1200 @@
+// Vault screen: header, entry list and entry details. The folder chip in the
+// details shows the entry's folder; clicking it moves the entry.
+
+import { ListView, ScrollView } from "std-widgets.slint";
+import { Theme, Icons } from "theme.slint";
+import { Icon, IconAction, SquareButton, PrimaryButton, SecondaryButton, LetterAvatar, Card, Divider, Backend, Kind, FolderItem, FolderDot, FolderMenu } from "components.slint";
+
+export struct EntryItem {
+    id: string,
+    title: string,
+    subtitle: string,
+    letter: string,
+    color: color,
+    has-totp: bool,
+    kind: int,
+    favorite: bool,
+}
+
+export struct EntryDetail {
+    id: string,
+    title: string,
+    letter: string,
+    color: color,
+    domain: string,
+    url: string,
+    username: string,
+    password: string,
+    notes: string,
+    has-totp: bool,
+    meta: string,
+    kind: int,
+    favorite: bool,
+    // kind = card
+    card-holder: string,
+    // formatted "2200 1234 …" for display, digits only for copying
+    card-number: string,
+    card-digits: string,
+    card-last4: string,
+    card-brand: string,
+    card-expiry: string,
+    card-cvv: string,
+    card-pin: string,
+    // 0 = ok / unknown, 1 = expiring soon, 2 = expired
+    card-status: int,
+    // "" = not in a folder
+    folder-id: string,
+    folder-name: string,
+    folder-color: color,
+}
+
+// Folder chip — the entry's folder; opens a menu to move the entry.
+component FolderChip inherits Rectangle {
+    in property <[FolderItem]> folders;
+    in property <string> folder-id;
+    in property <string> folder-name;
+    in property <color> folder-color;
+    callback picked(string);
+
+    width: chip.preferred-width;
+    height: chip.preferred-height;
+    border-radius: 999px;
+    background: ta.has-hover ? Theme.bg-hover : Theme.bg-elevated;
+    border-width: 1px;
+    border-color: Theme.border-subtle;
+    accessible-role: button;
+    accessible-label: root.folder-id == "" ? @tr("Move to folder") : @tr("Folder {0}, move", root.folder-name);
+    accessible-action-default => { menu.show(); }
+
+    chip := HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-top: 5px;
+        padding-bottom: 5px;
+        spacing: 7px;
+
+        if root.folder-id != "": VerticalLayout {
+            alignment: center;
+            FolderDot { tone: root.folder-color; size: 7px; }
+        }
+        if root.folder-id == "": Icon {
+            source: Icons.folder;
+            size: 11px;
+        }
+        Text {
+            text: root.folder-id == "" ? @tr("Add to folder") : root.folder-name;
+            font-size: 12px;
+            font-weight: 500;
+            color: root.folder-id == "" ? Theme.text-tertiary : Theme.text-secondary;
+            vertical-alignment: center;
+        }
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { menu.show(); }
+    }
+
+    menu := PopupWindow {
+        x: 0;
+        y: root.height + 4px;
+        width: 220px;
+
+        FolderMenu {
+            folders: root.folders;
+            current: root.folder-id;
+            picked(f) => { root.picked(f.id); }
+        }
+    }
+}
+
+// "Thanos snap" on delete: the row is replaced by tiles cut from a window
+// snapshot (taken in Rust right before the effect), which drift away with
+// the wind and fade, left to right.
+export global DeleteFx {
+    // Piece of the snapshot (physical pixels), cut in Rust.
+    pure callback tile(int /* x */, int /* y */, int /* w */, int /* h */) -> image;
+    // Entry being dissolved, "" when idle.
+    in property <string> entry-id;
+    // Window scale factor: the snapshot is in physical pixels.
+    in property <float> scale: 1;
+}
+
+component Dust inherits Rectangle {
+    in property <bool> active;
+
+    property <float> t: root.active ? 1 : 0;
+    animate t { duration: 1400ms; easing: linear; }
+    // Read `t` on every render so it already holds 0 when the effect starts;
+    // otherwise its first evaluation is 1 and nothing animates.
+    opacity: root.t > 2 ? 0 : 1;
+
+    property <length> tile: 6px;
+    property <int> cols: Math.ceil(root.width / root.tile);
+    property <int> rows: Math.ceil(root.height / root.tile);
+    property <float> ox: root.absolute-position.x / 1px * DeleteFx.scale;
+    property <float> oy: root.absolute-position.y / 1px * DeleteFx.scale;
+    property <float> px: root.tile / 1px * DeleteFx.scale;
+
+    for i in (root.active ? root.cols * root.rows : 0): Image {
+        property <int> c: Math.mod(i, root.cols);
+        property <int> r: Math.floor(i / root.cols);
+        // Cheap deterministic noise per tile.
+        property <float> n1: Math.mod(i * 7919 + 13, 101) / 101;
+        property <float> n2: Math.mod(i * 104729 + 7, 89) / 89;
+        property <float> n3: Math.mod(i * 1299709 + 3, 97) / 97;
+        // Dissolve sweeps left to right with some jitter.
+        property <float> delay: self.c / root.cols * 0.55 + self.n1 * 0.15;
+        property <float> p: Math.clamp((root.t - self.delay) / 0.3, 0, 1);
+        property <float> e: self.p * self.p;
+
+        source: DeleteFx.tile(
+            Math.round(root.ox + self.c * root.px),
+            Math.round(root.oy + self.r * root.px),
+            Math.round(root.px),
+            Math.round(root.px));
+        image-fit: fill;
+        x: self.c * root.tile + self.e * (40px + self.n2 * 90px);
+        y: self.r * root.tile - self.e * (15px + self.n3 * 55px) + Math.sin(self.p * 3.14rad * 2) * self.n1 * 6px;
+        width: root.tile * (1 - self.p * 0.5);
+        height: root.tile * (1 - self.p * 0.5);
+        opacity: 1 - self.p;
+    }
+}
+
+component EntryRow inherits Rectangle {
+    in property <EntryItem> item;
+    in property <bool> selected;
+    callback clicked;
+
+    property <bool> dusting: DeleteFx.entry-id != "" && DeleteFx.entry-id == root.item.id;
+
+    height: 58px;
+    border-radius: 12px;
+    background: root.dusting ? transparent : root.selected ? Theme.bg-elevated : ta.has-hover ? Theme.bg-hover : transparent;
+    border-width: root.selected && !root.dusting ? 1px : 0;
+    border-color: Theme.border-subtle;
+    accessible-role: list-item;
+    accessible-label: root.item.title;
+    accessible-item-selected: root.selected;
+    accessible-action-default => { root.clicked(); }
+
+    HorizontalLayout {
+        opacity: root.dusting ? 0 : 1;
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+        spacing: 12px;
+
+        LetterAvatar {
+            letter: root.item.letter;
+            tone: root.item.color;
+        }
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+
+            Text {
+                text: root.item.title;
+                font-size: 14px;
+                font-weight: 600;
+                color: Theme.text-primary;
+                overflow: elide;
+            }
+            if root.item.subtitle != "": Text {
+                text: root.item.subtitle;
+                font-size: 12px;
+                color: Theme.text-tertiary;
+                overflow: elide;
+            }
+        }
+
+        if root.item.kind == Kind.card: Icon {
+            source: Icons.card;
+            size: 13px;
+        }
+        if root.item.kind == Kind.note: Icon {
+            source: Icons.note;
+            size: 12px;
+        }
+        if root.item.has-totp: Icon {
+            source: Icons.clock;
+            size: 13px;
+        }
+        // Favourite star
+        if root.item.favorite: Icon {
+            source: Icons.star;
+            size: 14px;
+            colorize: Theme.warning;
+        }
+    }
+
+    Dust {
+        width: root.width;
+        height: root.height;
+        active: root.dusting;
+    }
+
+    ta := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// One digit of the 2FA code: a 0–9 strip in a one-digit window that rolls
+// to the new value, like the digit roller of the Go/Svelte app
+// (translateY, 350ms, cubic-bezier(0.4, 0, 0.2, 1)).
+component DigitRoller inherits Rectangle {
+    in property <int> digit;
+    in property <length> font-size: 15px;
+    in property <color> tone;
+
+    probe := Text {
+        visible: false;
+        text: "0";
+        font-family: Theme.mono;
+        font-size: root.font-size;
+        font-weight: 600;
+    }
+
+    width: probe.preferred-width;
+    height: probe.preferred-height;
+    clip: true;
+    accessible-role: none;
+
+    Rectangle {
+        y: -root.digit * root.height;
+        height: root.height * 10;
+        animate y { duration: 350ms; easing: cubic-bezier(0.4, 0, 0.2, 1); }
+
+        for d in 10: Text {
+            x: 0;
+            y: d * root.height;
+            width: root.width;
+            height: root.height;
+            text: d;
+            horizontal-alignment: center;
+            font-family: Theme.mono;
+            font-size: root.font-size;
+            font-weight: 600;
+            color: root.tone;
+        }
+    }
+}
+
+// One row of the detail fields (login, password, …).
+component FieldRow inherits VerticalLayout {
+    in property <string> label;
+    in property <bool> divider: false;
+
+    if root.divider: Divider { }
+
+    HorizontalLayout {
+        padding-top: 13px;
+        padding-bottom: 13px;
+        spacing: 14px;
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 3px;
+
+            Text {
+                text: root.label;
+                font-size: 11px;
+                font-weight: 700;
+                letter-spacing: 1px;
+                color: Theme.text-tertiary;
+            }
+            @children
+        }
+    }
+}
+
+component EmptyState inherits VerticalLayout {
+    in property <image> icon;
+    in property <string> title;
+    in property <string> text;
+
+    alignment: center;
+    spacing: 10px;
+
+    HorizontalLayout {
+        alignment: center;
+        Rectangle {
+            width: 56px;
+            height: 56px;
+            border-radius: 16px;
+            background: Theme.accent-soft;
+            Icon {
+                source: root.icon;
+                width: 22px;
+                height: 22px;
+                colorize: Theme.accent;
+            }
+        }
+    }
+    Text {
+        text: root.title;
+        horizontal-alignment: center;
+        font-size: 15px;
+        font-weight: 700;
+        color: Theme.text-primary;
+    }
+    Text {
+        text: root.text;
+        horizontal-alignment: center;
+        wrap: word-wrap;
+        font-size: 13px;
+        color: Theme.text-secondary;
+    }
+    @children
+}
+
+// Bank card face for kind = card.
+component CardFace inherits Rectangle {
+    in property <EntryDetail> detail;
+    in property <bool> revealed;
+
+    property <color> base: root.detail.color;
+
+    width: 360px;
+    height: 216px;
+    border-radius: 18px;
+    background: @linear-gradient(135deg, root.base.darker(0.1) 0%, root.base.darker(0.65) 100%);
+    drop-shadow-color: root.base.with-alpha(0.3);
+    drop-shadow-blur: 24px;
+    drop-shadow-offset-y: 10px;
+    clip: true;
+    accessible-role: none;
+
+    // Decorative circles.
+    Rectangle {
+        x: parent.width - 150px;
+        y: -70px;
+        width: 230px;
+        height: 230px;
+        border-radius: 115px;
+        background: #FFFFFF14;
+    }
+    Rectangle {
+        x: parent.width - 70px;
+        y: 100px;
+        width: 170px;
+        height: 170px;
+        border-radius: 85px;
+        background: #FFFFFF0D;
+    }
+
+    VerticalLayout {
+        padding: 22px;
+
+        HorizontalLayout {
+            spacing: 8px;
+            Text {
+                horizontal-stretch: 1;
+                text: root.detail.title;
+                font-size: 15px;
+                font-weight: 700;
+                color: #FFFFFF;
+                overflow: elide;
+            }
+            if root.detail.card-status == 2: Rectangle {
+                border-radius: 999px;
+                background: #FFFFFF2E;
+                HorizontalLayout {
+                    padding-left: 8px;
+                    padding-right: 8px;
+                    padding-top: 2px;
+                    padding-bottom: 2px;
+                    Text {
+                        text: @tr("Expired");
+                        font-size: 11px;
+                        font-weight: 700;
+                        color: #FFFFFF;
+                    }
+                }
+            }
+            Text {
+                text: root.detail.card-brand;
+                font-size: 15px;
+                font-weight: 800;
+                font-italic: true;
+                color: #FFFFFF;
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        // Chip.
+        HorizontalLayout {
+            alignment: start;
+            Rectangle {
+                width: 42px;
+                height: 32px;
+                border-radius: 7px;
+                background: @linear-gradient(135deg, #F5DE96 0%, #C9A24B 100%);
+                Rectangle {
+                    x: 0;
+                    y: (parent.height - 1px) / 2;
+                    height: 1px;
+                    background: #00000026;
+                }
+                Rectangle {
+                    x: (parent.width - 1px) / 2;
+                    y: 0;
+                    width: 1px;
+                    background: #00000026;
+                }
+            }
+        }
+
+        Rectangle { height: 16px; }
+
+        Text {
+            text: root.detail.card-digits == "" ? "•••• •••• •••• ••••"
+                : root.revealed ? root.detail.card-number
+                : "•••• •••• •••• \{root.detail.card-last4}";
+            font-family: Theme.mono;
+            font-size: 20px;
+            font-weight: 600;
+            letter-spacing: 1px;
+            color: #FFFFFF;
+        }
+
+        Rectangle { height: 14px; }
+
+        HorizontalLayout {
+            spacing: 16px;
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 2px;
+                Text {
+                    text: @tr("CARDHOLDER");
+                    font-size: 9px;
+                    font-weight: 700;
+                    letter-spacing: 1px;
+                    color: #FFFFFFA6;
+                }
+                Text {
+                    text: root.detail.card-holder == "" ? "—" : root.detail.card-holder.to-uppercase();
+                    font-size: 13px;
+                    font-weight: 600;
+                    color: #FFFFFF;
+                    overflow: elide;
+                }
+            }
+            VerticalLayout {
+                spacing: 2px;
+                Text {
+                    text: @tr("EXPIRES");
+                    font-size: 9px;
+                    font-weight: 700;
+                    letter-spacing: 1px;
+                    color: #FFFFFFA6;
+                }
+                Text {
+                    text: root.detail.card-expiry == "" ? "—" : root.detail.card-expiry;
+                    font-family: Theme.mono;
+                    font-size: 13px;
+                    font-weight: 600;
+                    color: #FFFFFF;
+                }
+            }
+        }
+    }
+}
+
+export component VaultMain inherits VerticalLayout {
+    in property <[EntryItem]> items;
+    in property <int> total;
+    in property <string> query;
+    in property <bool> sort-by-date;
+    in property <string> selected-id;
+    in property <EntryDetail> detail;
+    in property <bool> has-detail;
+    in property <string> totp-code;
+    in property <int> totp-remaining;
+    in property <string> totp-raw;
+    in property <[int]> totp-digits;
+    in-out property <bool> password-revealed;
+    // 0 = all, 1 = favourites, 2 = cards, 3 = notes, 4 = folder
+    in property <int> filter;
+    in property <[FolderItem]> folders;
+    // Name of the folder shown when filter == 4.
+    in property <string> folder-name;
+
+    callback select(string);
+    callback move-to-folder(string /* entry id */, string /* folder id */);
+    callback add();
+    callback toggle-favorite(string);
+
+    // Card secrets are revealed one by one and hidden again on selection.
+    property <bool> number-revealed;
+    property <bool> cvv-revealed;
+    property <bool> pin-revealed;
+    changed selected-id => {
+        root.number-revealed = false;
+        root.cvv-revealed = false;
+        root.pin-revealed = false;
+    }
+
+    property <string> section: root.filter == 1 ? @tr("Favorites") : root.filter == 2 ? @tr("Cards")
+        : root.filter == 3 ? @tr("Notes") : root.filter == 4 ? root.folder-name : @tr("All items");
+    callback edit(string);
+    callback delete(string);
+    callback toggle-sort();
+
+    // Header
+    HorizontalLayout {
+        padding-top: 20px;
+        padding-right: 24px;
+        padding-bottom: 16px;
+        padding-left: 24px;
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 2px;
+
+            Text {
+                text: root.query == "" ? root.section : @tr("Search");
+                font-size: 22px;
+                font-weight: 700;
+                color: Theme.text-primary;
+            }
+            Text {
+                text: root.query != "" ? @tr("Found {0} of {1}", root.items.length, root.total)
+                    : root.filter == 2 ? @tr("{n} card" | "{n} cards" % root.items.length)
+                    : root.filter == 3 ? @tr("{n} note" | "{n} notes" % root.items.length)
+                    : @tr("{n} item" | "{n} items" % root.items.length);
+                font-size: 13px;
+                color: Theme.text-tertiary;
+            }
+        }
+
+        // Add button
+        VerticalLayout {
+            alignment: center;
+            PrimaryButton {
+                text: @tr("Add");
+                has-icon: true;
+                icon: Icons.plus;
+                clicked => { root.add(); }
+            }
+        }
+    }
+
+    // List and details
+    HorizontalLayout {
+        vertical-stretch: 1;
+
+        // Entry list
+        VerticalLayout {
+            width: 400px;
+            padding-left: 12px;
+            padding-right: 12px;
+            padding-bottom: 12px;
+            spacing: 2px;
+
+            // Sort toggle
+            Rectangle {
+                HorizontalLayout {
+                    padding-top: 4px;
+                    padding-right: 12px;
+                    padding-bottom: 10px;
+                    padding-left: 12px;
+                    spacing: 8px;
+
+                    Text {
+                        horizontal-stretch: 1;
+                        text: root.sort-by-date ? @tr("Sort: last modified") : @tr("Sort: name");
+                        font-size: 12px;
+                        color: sort-ta.has-hover ? Theme.text-secondary : Theme.text-tertiary;
+                    }
+                    Icon {
+                        source: Icons.sort;
+                        size: 14px;
+                    }
+                }
+                sort-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.toggle-sort(); }
+                }
+            }
+
+            if root.items.length > 0: ListView {
+                vertical-stretch: 1;
+                for item in root.items: EntryRow {
+                    item: item;
+                    selected: item.id == root.selected-id;
+                    clicked => { root.select(item.id); }
+                }
+            }
+
+            if root.items.length == 0: EmptyState {
+                vertical-stretch: 1;
+                icon: root.query != "" ? Icons.search
+                    : root.filter == 1 ? Icons.star-outline
+                    : root.filter == 2 ? Icons.card
+                    : root.filter == 3 ? Icons.note
+                    : root.filter == 4 ? Icons.folder : Icons.vault;
+                title: root.query != "" ? @tr("Nothing found")
+                    : root.filter == 1 ? @tr("No favorites")
+                    : root.filter == 2 ? @tr("No cards yet")
+                    : root.filter == 3 ? @tr("No notes yet")
+                    : root.filter == 4 ? @tr("This folder is empty") : @tr("Your vault is empty");
+                text: root.query != "" ? @tr("Try a different search")
+                    : root.filter == 1 ? @tr("Star an item to see it here")
+                    : root.filter == 2 ? @tr("Number, expiry and CVV are stored encrypted")
+                    : root.filter == 3 ? @tr("Keep codes, addresses and anything you must not forget here")
+                    : root.filter == 4 ? @tr("Create an item here or move one from its details")
+                    : @tr("Add your first item — a password, card or note");
+
+                if root.query == "" && root.filter != 1: HorizontalLayout {
+                    alignment: center;
+                    padding-top: 6px;
+                    PrimaryButton {
+                        text: root.filter == 2 ? @tr("Add card") : root.filter == 3 ? @tr("Add note") : @tr("Add item");
+                        has-icon: true;
+                        icon: Icons.plus;
+                        clicked => { root.add(); }
+                    }
+                }
+            }
+        }
+
+        // Divider
+        Rectangle {
+            width: 1px;
+            background: Theme.border-subtle;
+        }
+
+        // Entry details
+        if !root.has-detail: EmptyState {
+            horizontal-stretch: 1;
+            icon: Icons.key;
+            title: root.total == 0 ? @tr("Item details appear here") : @tr("Select an item");
+            text: root.total == 0 ? "" : @tr("Logins, cards and notes open here");
+        }
+
+        if root.has-detail: VerticalLayout {
+            horizontal-stretch: 1;
+            opacity: DeleteFx.entry-id != "" && DeleteFx.entry-id == root.detail.id ? 0 : 1;
+            animate opacity { duration: 500ms; easing: ease-in; }
+            padding-top: 24px;
+            padding-bottom: 24px;
+            padding-left: 28px;
+            padding-right: 28px;
+            spacing: 18px;
+
+            // Header
+            HorizontalLayout {
+                spacing: 16px;
+
+                LetterAvatar {
+                    size: 56px;
+                    font-size: 24px;
+                    letter: root.detail.letter;
+                    tone: root.detail.color;
+                }
+
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: 4px;
+
+                    Text {
+                        text: root.detail.title;
+                        font-size: 22px;
+                        font-weight: 700;
+                        color: Theme.text-primary;
+                        overflow: elide;
+                    }
+                    if root.detail.domain != "": HorizontalLayout {
+                        spacing: 6px;
+                        alignment: start;
+                        Icon {
+                            source: Icons.globe;
+                            size: 11px;
+                        }
+                        Text {
+                            text: root.detail.domain;
+                            font-size: 13px;
+                            color: Theme.text-secondary;
+                        }
+                    }
+                }
+
+                // Favourite star
+                VerticalLayout {
+                    alignment: center;
+                    SquareButton {
+                        icon: root.detail.favorite ? Icons.star : Icons.star-outline;
+                        icon-color: root.detail.favorite ? Theme.warning : Theme.text-tertiary;
+                        label: root.detail.favorite ? @tr("Remove from favorites") : @tr("Add to favorites");
+                        clicked => { root.toggle-favorite(root.detail.id); }
+                    }
+                }
+
+                // Actions menu
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                    width: 36px;
+                    height: 36px;
+                    SquareButton {
+                        icon: Icons.ellipsis;
+                        label: @tr("Actions");
+                        clicked => { menu.show(); }
+                    }
+
+                        menu := PopupWindow {
+                            x: parent.width - 180px;
+                            y: parent.height + 6px;
+                            width: 180px;
+
+                            Rectangle {
+                                background: Theme.bg-elevated;
+                                border-radius: 12px;
+                                border-width: 1px;
+                                border-color: Theme.border-subtle;
+                                drop-shadow-color: Theme.shadow-modal;
+                                drop-shadow-blur: 24px;
+                                drop-shadow-offset-y: 8px;
+
+                                VerticalLayout {
+                                    padding: 6px;
+
+                                    for action[i] in [
+                                        { icon: Icons.pen, text: @tr("Edit"), danger: false },
+                                        { icon: Icons.trash, text: @tr("Delete"), danger: true },
+                                    ]: Rectangle {
+                                        border-radius: 8px;
+                                        background: menu-ta.has-hover ? Theme.bg-hover : transparent;
+
+                                        HorizontalLayout {
+                                            padding-left: 10px;
+                                            padding-right: 10px;
+                                            padding-top: 8px;
+                                            padding-bottom: 8px;
+                                            spacing: 10px;
+
+                                            Icon {
+                                                source: action.icon;
+                                                size: 13px;
+                                                colorize: action.danger ? Theme.danger : Theme.text-secondary;
+                                            }
+                                            Text {
+                                                horizontal-stretch: 1;
+                                                text: action.text;
+                                                font-size: 13px;
+                                                font-weight: 500;
+                                                color: action.danger ? Theme.danger : Theme.text-primary;
+                                            }
+                                        }
+
+                                        menu-ta := TouchArea {
+                                            clicked => {
+                                                if i == 0 {
+                                                    root.edit(root.detail.id);
+                                                } else {
+                                                    root.delete(root.detail.id);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Body scrolls when it does not fit; the header and footer stay.
+            // The body is at least as tall as the view, so a note can fill it.
+            detail-scroll := ScrollView {
+                vertical-stretch: 1;
+                content-width: self.visible-width;
+                content-height: max(detail-body.preferred-height, self.visible-height);
+
+                detail-body := VerticalLayout {
+                    width: detail-scroll.visible-width;
+                    height: max(self.preferred-height, detail-scroll.visible-height);
+                    spacing: 18px;
+
+                    // Fields
+                    if root.detail.kind == Kind.login && (root.detail.username != "" || root.detail.password != "" || root.detail.has-totp || root.detail.url != ""): Card {
+                        vertical-stretch: 0;
+                        VerticalLayout {
+                            padding-top: 2px;
+                            padding-bottom: 2px;
+                            padding-left: 20px;
+                            padding-right: 20px;
+
+                            // Login
+                            if root.detail.username != "": FieldRow {
+                                label: @tr("USERNAME");
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    Text {
+                                        horizontal-stretch: 1;
+                                        text: root.detail.username;
+                                        font-size: 15px;
+                                        color: Theme.text-primary;
+                                        vertical-alignment: center;
+                                        overflow: elide;
+                                    }
+                                    IconAction {
+                                        icon: Icons.copy;
+                                        tooltip: @tr("Copy username");
+                                        clicked => { Backend.copy(root.detail.username); }
+                                    }
+                                }
+                            }
+
+                            // Password
+                            if root.detail.password != "": FieldRow {
+                                label: @tr("PASSWORD");
+                                divider: root.detail.username != "";
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    Text {
+                                        horizontal-stretch: 1;
+                                        text: root.password-revealed ? root.detail.password : "••••••••••••";
+                                        font-family: Theme.mono;
+                                        font-size: 15px;
+                                        letter-spacing: root.password-revealed ? 0 : 2px;
+                                        color: Theme.text-primary;
+                                        vertical-alignment: center;
+                                        overflow: elide;
+                                    }
+                                    IconAction {
+                                        icon: root.password-revealed ? Icons.eye-slash : Icons.eye;
+                                        size: 15px;
+                                        tooltip: root.password-revealed ? @tr("Hide password") : @tr("Show password");
+                                        clicked => { root.password-revealed = !root.password-revealed; }
+                                    }
+                                    IconAction {
+                                        icon: Icons.copy;
+                                        tooltip: @tr("Copy password");
+                                        clicked => { Backend.copy(root.detail.password); }
+                                    }
+                                }
+                            }
+
+                            // 2FA code
+                            if root.detail.has-totp: FieldRow {
+                                label: @tr("2FA CODE");
+                                divider: root.detail.username != "" || root.detail.password != "";
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    if root.totp-code == "": Text {
+                                        horizontal-stretch: 1;
+                                        text: @tr("Invalid secret");
+                                        font-size: 13px;
+                                        font-weight: 600;
+                                        color: Theme.danger;
+                                        vertical-alignment: center;
+                                    }
+                                    if root.totp-code != "": HorizontalLayout {
+                                        horizontal-stretch: 1;
+                                        alignment: start;
+                                        accessible-role: text;
+                                        accessible-label: root.totp-code;
+
+                                        for digit[i] in root.totp-digits: HorizontalLayout {
+                                            // gap between the two halves: "482 901"
+                                            padding-left: i > 0 && i == Math.floor(root.totp-digits.length / 2) ? 9px : 0;
+                                            VerticalLayout {
+                                                alignment: center;
+                                                DigitRoller {
+                                                    digit: digit;
+                                                    tone: Theme.success;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    if root.totp-code != "": HorizontalLayout {
+                                        spacing: 6px;
+                                        Icon {
+                                            source: Icons.clock;
+                                            size: 14px;
+                                            colorize: root.totp-remaining <= 5 ? Theme.warning : Theme.success;
+                                        }
+                                        Text {
+                                            text: @tr("{0} s", root.totp-remaining);
+                                            min-width: 30px;
+                                            font-size: 12px;
+                                            color: root.totp-remaining <= 5 ? Theme.warning : Theme.text-tertiary;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                    if root.totp-code != "": IconAction {
+                                        icon: Icons.copy;
+                                        tooltip: @tr("Copy code");
+                                        clicked => { Backend.copy(root.totp-raw); }
+                                    }
+                                }
+                            }
+
+                            // Website
+                            if root.detail.url != "": FieldRow {
+                                label: @tr("WEBSITE");
+                                divider: root.detail.username != "" || root.detail.password != "" || root.detail.has-totp;
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    Text {
+                                        horizontal-stretch: 1;
+                                        text: root.detail.url;
+                                        font-size: 15px;
+                                        color: Theme.accent;
+                                        vertical-alignment: center;
+                                        overflow: elide;
+                                    }
+                                    IconAction {
+                                        icon: Icons.external;
+                                        size: 13px;
+                                        tooltip: @tr("Open in browser");
+                                        clicked => { Backend.open-url(root.detail.url); }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Card face: bank-card look in the entry's
+                    // accent colour, with chip, number, holder and expiry.
+                    if root.detail.kind == Kind.card: HorizontalLayout {
+                        alignment: start;
+                        CardFace {
+                            detail: root.detail;
+                            revealed: root.number-revealed;
+                        }
+                    }
+
+                    if root.detail.kind == Kind.card && (root.detail.card-digits != "" || root.detail.card-expiry != "" || root.detail.card-cvv != "" || root.detail.card-pin != "" || root.detail.card-holder != ""): Card {
+                        vertical-stretch: 0;
+                        VerticalLayout {
+                            padding-top: 2px;
+                            padding-bottom: 2px;
+                            padding-left: 20px;
+                            padding-right: 20px;
+
+                            if root.detail.card-digits != "": FieldRow {
+                                label: @tr("CARD NUMBER");
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    Text {
+                                        horizontal-stretch: 1;
+                                        text: root.number-revealed ? root.detail.card-number : "•••• •••• •••• \{root.detail.card-last4}";
+                                        font-family: Theme.mono;
+                                        font-size: 15px;
+                                        color: Theme.text-primary;
+                                        vertical-alignment: center;
+                                        overflow: elide;
+                                    }
+                                    IconAction {
+                                        icon: root.number-revealed ? Icons.eye-slash : Icons.eye;
+                                        size: 15px;
+                                        tooltip: root.number-revealed ? @tr("Hide number") : @tr("Show number");
+                                        clicked => { root.number-revealed = !root.number-revealed; }
+                                    }
+                                    IconAction {
+                                        icon: Icons.copy;
+                                        tooltip: @tr("Copy number");
+                                        clicked => { Backend.copy(root.detail.card-digits); }
+                                    }
+                                }
+                            }
+
+                            if root.detail.card-expiry != "": FieldRow {
+                                label: @tr("EXPIRY DATE");
+                                divider: root.detail.card-digits != "";
+                                HorizontalLayout {
+                                    spacing: 10px;
+                                    alignment: start;
+                                    Text {
+                                        text: root.detail.card-expiry;
+                                        font-family: Theme.mono;
+                                        font-size: 15px;
+                                        color: Theme.text-primary;
+                                        vertical-alignment: center;
+                                    }
+                                    if root.detail.card-status != 0: Rectangle {
+                                        border-radius: 999px;
+                                        background: (root.detail.card-status == 2 ? Theme.danger : Theme.warning).with-alpha(0.14);
+                                        HorizontalLayout {
+                                            padding-left: 8px;
+                                            padding-right: 8px;
+                                            padding-top: 2px;
+                                            padding-bottom: 2px;
+                                            Text {
+                                                text: root.detail.card-status == 2 ? @tr("expired") : @tr("expires soon");
+                                                font-size: 11px;
+                                                font-weight: 600;
+                                                color: root.detail.card-status == 2 ? Theme.danger : Theme.warning;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if root.detail.card-cvv != "": FieldRow {
+                                label: "CVV / CVC";
+                                divider: root.detail.card-digits != "" || root.detail.card-expiry != "";
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    Text {
+                                        horizontal-stretch: 1;
+                                        text: root.cvv-revealed ? root.detail.card-cvv : "•••";
+                                        font-family: Theme.mono;
+                                        font-size: 15px;
+                                        letter-spacing: root.cvv-revealed ? 0 : 2px;
+                                        color: Theme.text-primary;
+                                        vertical-alignment: center;
+                                    }
+                                    IconAction {
+                                        icon: root.cvv-revealed ? Icons.eye-slash : Icons.eye;
+                                        size: 15px;
+                                        tooltip: root.cvv-revealed ? @tr("Hide CVV") : @tr("Show CVV");
+                                        clicked => { root.cvv-revealed = !root.cvv-revealed; }
+                                    }
+                                    IconAction {
+                                        icon: Icons.copy;
+                                        tooltip: @tr("Copy CVV");
+                                        clicked => { Backend.copy(root.detail.card-cvv); }
+                                    }
+                                }
+                            }
+
+                            if root.detail.card-pin != "": FieldRow {
+                                label: "PIN";
+                                divider: root.detail.card-digits != "" || root.detail.card-expiry != "" || root.detail.card-cvv != "";
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    Text {
+                                        horizontal-stretch: 1;
+                                        text: root.pin-revealed ? root.detail.card-pin : "••••";
+                                        font-family: Theme.mono;
+                                        font-size: 15px;
+                                        letter-spacing: root.pin-revealed ? 0 : 2px;
+                                        color: Theme.text-primary;
+                                        vertical-alignment: center;
+                                    }
+                                    IconAction {
+                                        icon: root.pin-revealed ? Icons.eye-slash : Icons.eye;
+                                        size: 15px;
+                                        tooltip: root.pin-revealed ? @tr("Hide PIN") : @tr("Show PIN");
+                                        clicked => { root.pin-revealed = !root.pin-revealed; }
+                                    }
+                                    IconAction {
+                                        icon: Icons.copy;
+                                        tooltip: @tr("Copy PIN");
+                                        clicked => { Backend.copy(root.detail.card-pin); }
+                                    }
+                                }
+                            }
+
+                            if root.detail.card-holder != "": FieldRow {
+                                label: @tr("CARDHOLDER");
+                                divider: root.detail.card-digits != "" || root.detail.card-expiry != "" || root.detail.card-cvv != "" || root.detail.card-pin != "";
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    Text {
+                                        horizontal-stretch: 1;
+                                        text: root.detail.card-holder;
+                                        font-size: 15px;
+                                        color: Theme.text-primary;
+                                        vertical-alignment: center;
+                                        overflow: elide;
+                                    }
+                                    IconAction {
+                                        icon: Icons.copy;
+                                        tooltip: @tr("Copy cardholder name");
+                                        clicked => { Backend.copy(root.detail.card-holder); }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Notes: same card style as the fields.
+                    if root.detail.notes != "": Card {
+                        // A note is all text: let it take the free space.
+                        vertical-stretch: root.detail.kind == Kind.note ? 1 : 0;
+                        VerticalLayout {
+                            padding-top: 13px;
+                            padding-bottom: 13px;
+                            padding-left: 20px;
+                            padding-right: 20px;
+                            spacing: 6px;
+
+                            HorizontalLayout {
+                                Text {
+                                    horizontal-stretch: 1;
+                                    text: root.detail.kind == Kind.note ? @tr("NOTE") : @tr("NOTES");
+                                    font-size: 11px;
+                                    font-weight: 700;
+                                    letter-spacing: 1px;
+                                    color: Theme.text-tertiary;
+                                    vertical-alignment: center;
+                                }
+                                IconAction {
+                                    icon: Icons.copy;
+                                    tooltip: @tr("Copy notes");
+                                    clicked => { Backend.copy(root.detail.notes); }
+                                }
+                            }
+                            TextInput {
+                                vertical-stretch: 1;
+                                text: root.detail.notes;
+                                read-only: true;
+                                single-line: false;
+                                wrap: word-wrap;
+                                font-size: root.detail.kind == Kind.note ? 15px : 14px;
+                                color: Theme.text-primary;
+                                selection-background-color: Theme.accent.with-alpha(0.35);
+                                selection-foreground-color: Theme.text-primary;
+                            }
+                        }
+                    }
+
+                    // Folder chip
+                    if root.folders.length > 0: HorizontalLayout {
+                        vertical-stretch: 0;
+                        alignment: start;
+                        FolderChip {
+                            folders: root.folders;
+                            folder-id: root.detail.folder-id;
+                            folder-name: root.detail.folder-name;
+                            folder-color: root.detail.folder-color;
+                            picked(id) => { root.move-to-folder(root.detail.id, id); }
+                        }
+                    }
+
+                    if root.detail.kind != Kind.note || root.detail.notes == "": Rectangle { vertical-stretch: 1; }
+                }
+            }
+
+            // Footer
+            HorizontalLayout {
+                spacing: 12px;
+                Text {
+                    horizontal-stretch: 1;
+                    text: root.detail.meta;
+                    font-size: 12px;
+                    color: Theme.text-tertiary;
+                    vertical-alignment: center;
+                }
+                SecondaryButton {
+                    text: @tr("Edit");
+                    pad-y: 9px;
+                    font-size: 13px;
+                    clicked => { root.edit(root.detail.id); }
+                }
+            }
+        }
+    }
+}
