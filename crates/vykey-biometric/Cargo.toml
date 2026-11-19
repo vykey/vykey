@@ -1,6 +1,6 @@
 [package]
 name = "vykey-biometric"
-description = "Fingerprint unlock for vykey: fprintd + Secret Service on Linux"
+description = "Fingerprint unlock for vykey: fprintd + the kernel keyring on Linux"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -19,7 +19,8 @@ zeroize = "1.9.2"
 async-channel = "2.5.0"
 async-io = "2.6.0"
 futures-lite = "2.6.1"
-zbus = { version = "5.19.0", default-features = false, features = ["async-io", "blocking-api"] }
+linux-keyutils = { version = "0.2.5", features = ["std"] }
+zbus = { version = "5.19.0", default-features = false, features = ["async-io"] }
 
 [lints]
 workspace = true

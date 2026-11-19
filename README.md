@@ -37,7 +37,7 @@ upgrades them in place — see [docs/vault-format.md](docs/vault-format.md) and
 
 ```
 crates/vykey-core      vault format, crypto, storage, TOTP, audit (no UI)
-crates/vykey-biometric fingerprint unlock: fprintd + Secret Service (Linux)
+crates/vykey-biometric fingerprint unlock: fprintd + kernel keyring (Linux)
 crates/vykey-desktop   Slint desktop app, binary `vykey` (ui/, src/, translations/)
 crates/vykey-cli       terminal client, binary `vy` (ratatui)
 docs/                  vault format spec
@@ -91,18 +91,26 @@ fingerprint reader" while the password field keeps working. Three attempts,
 30 s timeout; then "Use fingerprint" (desktop) or `ctrl+f` (TUI) retries.
 
 Turn it on per vault in the desktop app (Settings → Security) or with
-`vy fingerprint enable`. It needs the master password once: the vault key
-derived from it is stored in the system keyring (Secret Service: GNOME
-Keyring, KWallet, KeePassXC) as "vykey vault “name”". After a matching
-finger vykey reads the key back and opens the vault without Argon2. The
-master password itself is never stored.
+`vy fingerprint enable`. Each time the master password opens such a vault,
+its data key goes into the kernel keyring (`keyctl`, user keyring, key
+`vykey:<vault id>`) for 24 hours. After a matching finger vykey reads the key
+back and opens the vault without Argon2; that does not extend the 24 hours.
+So the master password is needed:
+
+- after every restart (the kernel keyring lives in memory only);
+- at least once a day (the kernel drops the key, even if vykey is not
+  running).
+
+These limits are fixed. Nothing to install besides fprintd: no GNOME
+Keyring or KWallet. The master password itself is never stored, and
+changing it keeps fingerprint unlock working.
 
 What this protects against, and what not:
 
-- The fingerprint only gates vykey's own UI. The keyring hands the key to
-  any program of your user while the keyring is unlocked (normally the whole
-  login session), so malware in your session can read the vault without a
-  finger. Unlike Touch ID or Windows Hello there is no hardware binding.
+- The fingerprint only gates vykey's own UI. Any program of your user can
+  read the key while it lives, so malware in your session can open the vault
+  without a finger for up to a day. Unlike Touch ID or Windows Hello there is
+  no hardware binding. The key never touches the disk.
 - The key alone is not enough: it decrypts the database file, which must be
   stolen as well.
 - Deleting a vault removes its key. A key that no longer opens the vault

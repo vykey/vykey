@@ -70,7 +70,9 @@ export global Tr {
     public pure function fp-reset() -> string {
         @tr("The saved fingerprint key no longer fits this vault — enter the master password")
     }
-    public pure function fp-keyring-dismissed() -> string { @tr("The system keyring was not unlocked") }
+    public pure function fp-expired() -> string {
+        @tr("Fingerprint unlock resumes once you enter the master password")
+    }
     public pure function fp-error(details: string) -> string { @tr("Fingerprint unlock failed: {0}", details) }
     public pure function fp-on() -> string { @tr("Fingerprint unlock enabled") }
     public pure function fp-off() -> string { @tr("Fingerprint unlock disabled") }

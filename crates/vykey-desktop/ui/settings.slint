@@ -297,7 +297,6 @@ export component SettingsMain inherits VerticalLayout {
     in property <string> vault-name;
     in property <int> fp-support;
     in property <bool> fp-enabled;
-    in property <bool> fp-toggle-busy;
     callback set-fingerprint(bool);
     // Opens the change-master-password dialog (vault-dialog 3 in app.slint).
     callback change-password();
@@ -413,13 +412,13 @@ export component SettingsMain inherits VerticalLayout {
                     title: @tr("Unlock with fingerprint");
                     hint: root.fp-support == 1
                         ? @tr("Enroll a fingerprint in the system settings first")
-                        : @tr("Open “{0}” with a finger instead of the master password. Its key is kept in the system keyring", root.vault-name);
+                        : @tr("Open “{0}” with a finger. The master password is still needed after a restart and at least once a day", root.vault-name);
 
                     Switch {
                         label: @tr("Unlock with fingerprint");
                         checked: root.fp-enabled;
                         // Turning it off always works, even without fingers.
-                        enabled: !root.fp-toggle-busy && (root.fp-support == 2 || root.fp-enabled);
+                        enabled: root.fp-support == 2 || root.fp-enabled;
                         toggled(on) => { root.set-fingerprint(on); }
                     }
                 }

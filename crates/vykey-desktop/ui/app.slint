@@ -84,7 +84,6 @@ export component AppWindow inherits Window {
     // hidden), 1 = reader without enrolled fingers, 2 = ready.
     in property <int> fp-support;
     in property <bool> fp-enabled;
-    in property <bool> fp-toggle-busy;
     callback set-fingerprint(bool);
     callback select-filter(int);
     callback select-folder(string);
@@ -263,7 +262,6 @@ export component AppWindow inherits Window {
                 vault-name: root.vault-name;
                 fp-support: root.fp-support;
                 fp-enabled: root.fp-enabled;
-                fp-toggle-busy: root.fp-toggle-busy;
                 set-fingerprint(on) => { root.set-fingerprint(on); }
             }
         }

@@ -30,16 +30,16 @@ pub fn verify(_: &Cancel, _: Duration, _: impl FnMut(Event)) -> Result<Verdict> 
     Err(Error::Unsupported)
 }
 
-pub fn has_secret(_: &str) -> Result<bool> {
-    Ok(false)
+pub fn has_secret(_: &str) -> bool {
+    false
 }
 
-pub fn store_secret(_: &str, _: &str, _: &[u8]) -> Result<()> {
+pub fn store_secret(_: &str, _: &[u8], _: Duration) -> Result<()> {
     Err(Error::Unsupported)
 }
 
 pub fn load_secret(_: &str) -> Result<Option<Zeroizing<Vec<u8>>>> {
-    Err(Error::Unsupported)
+    Ok(None)
 }
 
 pub fn delete_secret(_: &str) -> Result<()> {

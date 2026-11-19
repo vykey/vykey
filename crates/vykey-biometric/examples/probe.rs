@@ -2,7 +2,7 @@
 //!
 //! ```sh
 //! cargo run -p vykey-biometric --example probe            # reader status
-//! cargo run -p vykey-biometric --example probe -- keyring # store/load/delete a test key
+//! cargo run -p vykey-biometric --example probe -- keyring # store/load/remove a test key
 //! cargo run -p vykey-biometric --example probe -- verify  # scan a finger (30 s)
 //! ```
 
@@ -12,7 +12,7 @@ fn main() -> Result<(), Error> {
     println!("reader: {:?}", vykey_biometric::availability());
     match std::env::args().nth(1).as_deref() {
         Some("keyring") => {
-            let id = "vykey-probe-test";
+            let id = "probe-test";
             let meta = vykey_core::VaultMeta {
                 id: id.into(),
                 name: "probe".into(),
@@ -23,12 +23,12 @@ fn main() -> Result<(), Error> {
                 updated_at: 0,
             };
             let key = zeroize::Zeroizing::new([7u8; 32]);
-            vykey_biometric::enable(&meta, &key)?;
-            println!("stored, enabled = {}", vykey_biometric::is_enabled(id)?);
+            vykey_biometric::store_key(id, &key)?;
+            println!("stored, has_key = {}", vykey_biometric::has_key(id));
             // The verifier is empty, so the key is "stale" and gets removed.
             println!("open → {:?}", vykey_biometric::open(meta)?.is_some());
-            println!("after open, enabled = {}", vykey_biometric::is_enabled(id)?);
-            vykey_biometric::disable(id)?;
+            println!("after open, has_key = {}", vykey_biometric::has_key(id));
+            vykey_biometric::remove_key(id)?;
         }
         Some("verify") => {
             // Optional timeout in seconds as the second argument.

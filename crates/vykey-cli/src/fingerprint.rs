@@ -1,8 +1,11 @@
 //! `vy fingerprint`: turns fingerprint unlock on or off for a vault. The
 //! TUI then waits for a finger on its unlock screen, like `sudo` with
-//! pam_fprintd. See `vykey_biometric` for how the key is kept.
+//! pam_fprintd. The flag lives in settings.json (shared with the desktop
+//! app); the key itself in the kernel keyring, for at most a day after the
+//! last master password and never across a reboot (see `vykey_biometric`).
 
 use vykey_biometric::Availability;
+use vykey_core::settings::Settings;
 use vykey_core::{Store, Vault};
 
 use crate::import::pick_vault;
@@ -11,9 +14,9 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 #[derive(Clone, Copy, clap::ValueEnum)]
 pub enum Action {
-    /// Store the vault key in the system keyring (asks for the master password)
+    /// Turn it on (asks for the master password)
     Enable,
-    /// Remove the vault key from the system keyring
+    /// Turn it off and drop the stored key
     Disable,
     /// Show the reader and which vaults have fingerprint unlock
     Status,
@@ -31,6 +34,8 @@ fn reader_text(a: Availability) -> &'static str {
 }
 
 pub fn run(store: &Store, action: Action, vault: Option<&str>) -> Result<()> {
+    let path = vykey_core::paths::settings_path().ok_or("cannot find the settings directory")?;
+    let mut settings = Settings::load(&path);
     match action {
         Action::Status => {
             println!("Reader: {}", reader_text(vykey_biometric::availability()));
@@ -39,8 +44,12 @@ pub fn run(store: &Store, action: Action, vault: Option<&str>) -> Result<()> {
                 None => store.list_vaults()?,
             };
             for v in vaults {
-                let on = vykey_biometric::is_enabled(&v.id)?;
-                println!("{}: {}", v.name, if on { "enabled" } else { "disabled" });
+                let state = match (settings.fingerprint(&v.id), vykey_biometric::has_key(&v.id)) {
+                    (false, _) => "off",
+                    (true, true) => "on",
+                    (true, false) => "on, enter the master password once to use it",
+                };
+                println!("{}: {state}", v.name);
             }
         }
         Action::Enable => {
@@ -55,17 +64,21 @@ pub fn run(store: &Store, action: Action, vault: Option<&str>) -> Result<()> {
             ))?);
             let vault = Vault::unlock(meta, &password)?;
             drop(password);
-            vykey_biometric::enable(vault.meta(), vault.key())?;
+            vykey_biometric::store_key(&vault.meta().id, vault.key())?;
+            settings.set_fingerprint(&vault.meta().id, true);
+            settings.save(&path)?;
             println!(
                 "Fingerprint unlock enabled for \"{}\".\n\
-                 The vault key is now in the system keyring: anyone who can use your \
-                 unlocked session can read it. Turn it off with `vy fingerprint disable`.",
+                 The master password is still needed after every restart and at least \
+                 once a day. Turn it off with `vy fingerprint disable`.",
                 vault.meta().name
             );
         }
         Action::Disable => {
             let meta = pick_vault(store, vault)?;
-            vykey_biometric::disable(&meta.id)?;
+            vykey_biometric::remove_key(&meta.id)?;
+            settings.set_fingerprint(&meta.id, false);
+            settings.save(&path)?;
             println!("Fingerprint unlock disabled for \"{}\".", meta.name);
         }
     }

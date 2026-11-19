@@ -200,19 +200,25 @@ An older vykey-rs refuses a database with a newer schema (`SchemaTooNew`).
 
 ## Fingerprint unlock (outside the database)
 
-Opt-in per vault (`crates/vykey-biometric`). The 32-byte master key (the
-Argon2id output above, not the password) is stored raw in the user's Secret
-Service keyring, default collection:
+Opt-in per vault (`crates/vykey-biometric`). Which vaults have it is kept in
+`settings.json` (`fingerprint_vaults`: vault ids), not in the database.
 
-| Field      | Value |
-|------------|-------|
-| Label      | `vykey vault “<name>”` (not updated on rename) |
-| Attributes | `application` = `vykey`, `vault-id` = `vault_meta.id` |
-| Secret     | 32 bytes, content type `application/octet-stream` |
+The 32-byte data key (see "Keys"; not the password) is kept in the Linux
+kernel key retention service, never on disk:
 
-A key is accepted only if it decrypts `vault_meta.verifier`; otherwise the
-item is deleted. Deleting a vault deletes its item. Nothing in the database
-records whether fingerprint unlock is on.
+| Field       | Value |
+|-------------|-------|
+| Keyring     | user keyring `@u` |
+| Type        | `user` |
+| Description | `vykey:<vault_meta.id>` |
+| Payload     | the 32-byte data key |
+| Permissions | possessor: all; user: view, read, write, search, setattr |
+| Timeout     | 24 h, set each time the master password opens the vault |
+
+A fingerprint unlock reads the key but does not renew it, so the master
+password is needed after a reboot and at least once a day. A key is accepted
+only if it decrypts `vault_meta.verifier`; otherwise it is removed. Turning
+the feature off or deleting the vault removes the key.
 
 ## Known issues
 

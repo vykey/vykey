@@ -806,9 +806,6 @@ msgstr "Вход по отпечатку пальца"
 msgid "Enroll a fingerprint in the system settings first"
 msgstr "Сначала добавьте отпечаток в настройках системы"
 
-msgid "Open “{0}” with a finger instead of the master password. Its key is kept in the system keyring"
-msgstr "Открывать «{0}» отпечатком пальца вместо мастер-пароля. Ключ хранилища хранится в системной связке ключей"
-
 msgid "left thumb"
 msgstr "левый большой палец"
 
@@ -880,9 +877,6 @@ msgstr "Сканер отпечатков занят другой програм
 
 msgid "The saved fingerprint key no longer fits this vault — enter the master password"
 msgstr "Сохранённый ключ больше не подходит к этому хранилищу — введите мастер-пароль"
-
-msgid "The system keyring was not unlocked"
-msgstr "Системная связка ключей не разблокирована"
 
 msgid "Fingerprint unlock failed: {0}"
 msgstr "Вход по отпечатку не удался: {0}"
@@ -962,3 +956,9 @@ msgstr "Сменить пароль хранилища «{0}». Записи н�
 
 msgid "Change…"
 msgstr "Сменить…"
+
+msgid "Fingerprint unlock resumes once you enter the master password"
+msgstr "Вход по отпечатку заработает снова после ввода мастер-пароля"
+
+msgid "Open “{0}” with a finger. The master password is still needed after a restart and at least once a day"
+msgstr "Открывать «{0}» отпечатком пальца. Мастер-пароль всё равно понадобится после перезагрузки и не реже раза в сутки"
