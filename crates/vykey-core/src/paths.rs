@@ -1,6 +1,7 @@
 //! Default database location: `$VYKEY_DB_PATH`, else
 //! `<data dir>/vykey/vykey.db`. Databases of the Go app (`kyp/kyp.db`) are
-//! not picked up automatically: copy the file to the new path (see README).
+//! not picked up automatically: copy the file to the new path (see
+//! docs/usage.md, "Migrating from kyp").
 
 use std::env;
 use std::path::PathBuf;
