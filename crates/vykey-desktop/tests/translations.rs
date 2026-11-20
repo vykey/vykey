@@ -61,7 +61,8 @@ fn ui_strings(dir: &Path) -> BTreeSet<Key> {
 
 /// Entries of a PO file with their translations (header skipped).
 fn po_entries(path: &Path) -> Vec<(Key, Vec<String>)> {
-    let src = fs::read_to_string(path).unwrap();
+    // CRLF if git converted line endings on checkout (Windows).
+    let src = fs::read_to_string(path).unwrap().replace("\r\n", "\n");
     let mut entries = Vec::new();
     for block in src.split("\n\n") {
         let (mut ctx, mut id, mut plural, mut strs) =

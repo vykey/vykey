@@ -1,0 +1,7 @@
+# LF everywhere, also in Windows checkouts: the .po/.slint/.sql sources are
+# parsed and bundled byte for byte, and CI on Windows checks out with
+# core.autocrlf=true.
+* text=auto eol=lf
+
+*.png binary
+*.db binary
