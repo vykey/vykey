@@ -1,0 +1,177 @@
+# Release builds for Linux, macOS and Windows.
+#
+# Push a tag `v*` (e.g. `git tag v0.1.0 && git push origin v0.1.0`) to build
+# all three and attach the archives to a draft GitHub release; publish it by
+# hand after a look. "Run workflow" on the Actions tab builds the same
+# archives as workflow artifacts without making a release.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  linux:
+    # The oldest supported runner: binaries built against an older glibc run
+    # on newer distributions, not the other way round.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Version
+        id: version
+        shell: bash
+        run: bash .github/scripts/version.sh >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        run: cargo build --release --locked -p vykey-desktop -p vykey-cli
+
+      - name: Package
+        run: |
+          name=vykey-${{ steps.version.outputs.version }}-linux-x86_64
+          mkdir -p "dist/$name"
+          cp target/release/vykey target/release/vy LICENSE README.md "dist/$name/"
+          tar -C dist -czf "dist/$name.tar.gz" "$name"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Version
+        id: version
+        shell: bash
+        run: bash .github/scripts/version.sh >> "$GITHUB_OUTPUT"
+
+      - name: Build (Apple Silicon and Intel)
+        run: |
+          for target in aarch64-apple-darwin x86_64-apple-darwin; do
+            cargo build --release --locked -p vykey-desktop -p vykey-cli --target "$target"
+          done
+
+      - name: Package
+        run: |
+          version=${{ steps.version.outputs.version }}
+          name=vykey-$version-macos-universal
+          out=dist/$name
+          app=$out/vykey.app
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+
+          # Universal binaries: one file for both architectures.
+          for bin in vykey vy; do
+            dest=$app/Contents/MacOS/$bin
+            [ "$bin" = vy ] && dest=$out/vy
+            lipo -create -output "$dest" \
+              "target/aarch64-apple-darwin/release/$bin" \
+              "target/x86_64-apple-darwin/release/$bin"
+          done
+
+          # App icon from the 1024 px master.
+          iconset=dist/vykey.iconset
+          mkdir -p "$iconset"
+          src=assets/logo/vykey-appicon-glossy-dark-1024.png
+          for size in 16 32 128 256 512; do
+            sips -z $size $size "$src" --out "$iconset/icon_${size}x${size}.png" >/dev/null
+            sips -z $((size * 2)) $((size * 2)) "$src" --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
+          done
+          iconutil -c icns "$iconset" -o "$app/Contents/Resources/vykey.icns"
+
+          # CFBundleVersion must be numeric: drop a "-dev+sha" suffix.
+          sed "s/@VERSION@/${version%%-*}/g" packaging/macos/Info.plist > "$app/Contents/Info.plist"
+          cp LICENSE README.md "$out/"
+
+          # Ad-hoc signature (no Apple Developer ID yet): enough to launch
+          # on Apple Silicon; Gatekeeper still asks on first open.
+          codesign --force --deep --sign - "$app"
+          codesign --force --sign - "$out/vy"
+
+          ditto -c -k --keepParent "$out" "dist/$name.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/*.zip
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Version
+        id: version
+        shell: bash
+        run: bash .github/scripts/version.sh >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        run: cargo build --release --locked -p vykey-desktop -p vykey-cli
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $name = "vykey-${{ steps.version.outputs.version }}-windows-x86_64"
+          New-Item -ItemType Directory -Force "dist/$name" | Out-Null
+          Copy-Item target/release/vykey.exe, target/release/vy.exe, LICENSE, README.md "dist/$name/"
+          Compress-Archive -Path "dist/$name" -DestinationPath "dist/$name.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*.zip
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux, macos, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS
+
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft \
+            --title "vykey ${GITHUB_REF_NAME#v}" \
+            --generate-notes
