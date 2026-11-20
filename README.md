@@ -5,183 +5,136 @@
   </picture>
 </p>
 
-# vykey
+<p align="center">
+  <b>Vault Your Keys.</b> No cloud. No account. No trust required.
+</p>
 
-**vykey** (*Vault Your Keys*) is a local password manager written in Rust: a
-native desktop app ([Slint](https://slint.dev), no web view, no JS) and a
-terminal client, `vy`, working on the same encrypted vault file.
+<p align="center">
+  <a href="https://github.com/vykey/vykey/actions/workflows/ci.yml"><img src="https://github.com/vykey/vykey/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-6A58F0" alt="MIT license"></a>
+  <img src="https://img.shields.io/badge/made%20with-Rust-8F81FF" alt="Made with Rust">
+</p>
 
-Formerly kyp; successor of the Go app
-([stickpro/kyp](https://github.com/stickpro/kyp)): opens its databases and
-upgrades them in place — see [docs/vault-format.md](docs/vault-format.md) and
-[Migrating from kyp](#migrating-from-kyp).
+---
+
+**vykey** is a password manager that lives on your computer, not in someone's
+cloud. Passwords, cards, 2FA codes and notes are kept in one encrypted file
+on your own disk: no account, no subscription, no server, no telemetry.
+Open it in a fast native desktop app or right in your terminal.
+
+## Why vykey
+
+- **Yours, offline.** Your vault never leaves your machine. Back it up,
+  move it or sync it however you like: it is a single file.
+- **Native and light.** Written in Rust with a native UI ([Slint](https://slint.dev)),
+  not a browser in disguise. No Electron, no JavaScript, about 30 MB of RAM.
+- **Desktop and terminal.** The same vault opens in the desktop app and in
+  `vy`, a full-screen terminal client for people who live in a shell.
+- **Unlock with a finger.** On Linux, touch the fingerprint reader instead
+  of typing the master password, just like `sudo`.
+- **Strong, boring crypto.** Argon2id and AES-256-GCM. Every field of every
+  entry is encrypted, titles included.
+
+|                                  | vykey | pass | gopass | Bitwarden |
+|----------------------------------|:-----:|:----:|:------:|:---------:|
+| Works without a cloud or account | ✅ | ✅ | ✅ | ❌ |
+| Encryption without GPG setup     | ✅ | ❌ | ❌ | ✅ |
+| Built-in 2FA (TOTP) codes        | ✅ | add-on | ✅ | paid plan |
+| Entry names encrypted            | ✅ | ❌ | ❌ | ✅ |
+| Whole vault in a single file     | ✅ | ❌ | ❌ | ❌ |
+| Native desktop app               | ✅ | ❌ | ❌ | Electron |
+| Full-screen terminal UI          | ✅ | ❌ | ❌ | ❌ |
+
+<sub>pass and gopass keep one GPG-encrypted file per entry, so entry names
+show up as file names. Corrections welcome.</sub>
 
 ## Features
 
-- Several vaults in one database, each with its own master password:
-  create, switch, rename, change the master password, delete
-- Logins, payment cards (Luhn check, payment system, expiry warnings) and
-  secure notes; favourites and coloured folders
-- Everything except timestamps is encrypted, titles included
-- Unlock / create vault, entry list with search and sorting, entry details
-  with copy, reveal and live 2FA (TOTP) codes
-- Create, edit and delete entries; password generator with strength meter
-- Offline security audit: weak, reused and stale passwords, 2FA coverage
-- Settings: light, dark or system theme; interface language (English,
-  Russian; follows the system by default); auto-lock delay
-- Auto-lock on inactivity (5 min by default), clipboard auto-clear after 30 s
-- Fingerprint unlock on Linux (fprintd), opt-in per vault — see below
-- Terminal client `vy`: full-screen TUI and Bitwarden CSV import
+- **Logins** with live 2FA (TOTP) codes and a password generator with a
+  strength meter
+- **Payment cards** with card-number validation, card brand and expiry
+  warnings
+- **Secure notes**, favourites and coloured folders
+- **Several vaults**, each with its own master password
+- **Security audit**, fully offline: weak, reused and old passwords, and
+  accounts without 2FA
+- **Auto-lock** after inactivity and a clipboard that clears itself after
+  30 seconds
+- **Fingerprint unlock** on Linux (fprintd), limited to a day and gone after
+  a reboot
+- **Import from Bitwarden** (CSV)
+- **Light and dark themes**, English and Russian interface
 
-## Layout
+## Security in a nutshell
 
-```
-crates/vykey-core      vault format, crypto, storage, TOTP, audit (no UI)
-crates/vykey-biometric fingerprint unlock: fprintd + kernel keyring (Linux)
-crates/vykey-desktop   Slint desktop app, binary `vykey` (ui/, src/, translations/)
-crates/vykey-cli       terminal client, binary `vy` (ratatui)
-docs/                  vault format spec
-assets/logo/           logo, wordmark, lockup and app icon (PNG)
-testdata/              fixture databases created by the Go app
-```
+Your master password is stretched with Argon2id (64 MB of memory per guess)
+into a key that unlocks the vault's random data key. Every field is
+encrypted separately with AES-256-GCM. The master password is never stored,
+and changing it takes a moment because the entries do not need re-encrypting.
 
-## Build
+The format is open and documented in [docs/vault-format.md](docs/vault-format.md).
+What vykey does *not* protect against (a weak master password, malware
+running as you while the vault is open) is spelled out in
+[docs/usage.md](docs/usage.md#fingerprint-unlock-linux).
+
+## Get started
+
+vykey is developed and tested on Linux. Prebuilt packages are on the way;
+for now, build it with [Rust](https://rustup.rs):
 
 ```sh
-cargo run -p vykey-desktop             # debug
-cargo build -p vykey-desktop --release # → target/release/vykey
-cargo build -p vykey-cli --release     # → target/release/vy
+git clone https://github.com/vykey/vykey && cd vykey
+cargo build --release -p vykey-desktop -p vykey-cli
+./target/release/vykey   # desktop app
+./target/release/vy      # terminal client
+```
+
+On Linux you need the `fontconfig` and `libxkbcommon` development headers.
+
+Moving over from Bitwarden? `vy import bitwarden.csv`. Coming from kyp, the
+Go predecessor of vykey? Your database opens as is: see
+[Migrating from kyp](docs/usage.md#migrating-from-kyp).
+
+More in the [user guide](docs/usage.md): terminal shortcuts, fingerprint
+unlock, configuration.
+
+## Roadmap
+
+Next on the list:
+
+- **Packages and releases** for Linux (AppImage / Flatpak), then macOS and
+  Windows
+- **Export** to an open format, so you can always take your data elsewhere
+- **Touch ID and Windows Hello** unlock
+- **Trash and password history**, to undo a deletion or a password change
+- **Custom fields and attachments**
+- **More imports**: KeePass, 1Password, browsers
+- **Browser autofill** and **sync** between your own devices, without a
+  vendor cloud
+
+Ideas and bug reports are welcome in [issues](https://github.com/vykey/vykey/issues).
+
+## For developers
+
+A Cargo workspace of four crates:
+
+```
+crates/vykey-core       vault format, crypto, storage, TOTP, audit (no UI)
+crates/vykey-desktop    desktop app (Slint), binary `vykey`
+crates/vykey-cli        terminal client (ratatui), binary `vy`
+crates/vykey-biometric  fingerprint unlock (fprintd + kernel keyring)
+```
+
+```sh
+cargo run -p vykey-desktop
 cargo test --workspace
 ```
 
-Linux needs `fontconfig` and `libxkbcommon` development headers.
-
-## Terminal client
-
-```sh
-vy                                  # open the TUI (same as `vy start`)
-vy --db ~/vault.db                  # another database
-vy import bitwarden.csv             # import a Bitwarden CSV export
-vy import bitwarden.csv --vault Work --folder Work
-vy fingerprint enable --vault Work  # fingerprint unlock (see below)
-vy fingerprint status
-vy passwd --vault Work              # change the master password
-```
-
-`vy import` asks for the master password (it is never a command-line
-argument), imports logins and secure notes, and turns Bitwarden folders into
-vykey folders.
-
-| Screen  | Keys |
-|---------|------|
-| vaults  | `↑`/`↓` pick a vault, `enter` unlock, `n` new vault, `q` quit; `esc` on the password prompt returns here; `ctrl+f` retries the fingerprint |
-| list    | `↑`/`↓` (`j`/`k`) move, `enter` open, `/` filter, `n` new entry, `v` switch vault, `q` quit |
-| details | `u` copy username, `c` copy password (card: number), `t` copy TOTP, `v` copy CVV, `p`/`space` show/hide, `f` favourite, `e` edit, `d` delete, `esc` back |
-| form    | `tab`/`shift+tab` next/previous field, `←`/`→` entry type (new entries), `ctrl+g` generate password, `ctrl+p` show/hide, `ctrl+s` save, `esc` back |
-| any     | `ctrl+l` lock, `ctrl+c` quit |
-
-The terminal client is English only.
-
-## Fingerprint unlock (Linux)
-
-With a reader supported by [fprintd](https://fprint.freedesktop.org/) and an
-enrolled finger (`fprintd-enroll`), a vault can be opened like `sudo` with
-`pam_fprintd`: the unlock screen shows "Place your right index finger on the
-fingerprint reader" while the password field keeps working. Three attempts,
-30 s timeout; then "Use fingerprint" (desktop) or `ctrl+f` (TUI) retries.
-
-Turn it on per vault in the desktop app (Settings → Security) or with
-`vy fingerprint enable`. Each time the master password opens such a vault,
-its data key goes into the kernel keyring (`keyctl`, user keyring, key
-`vykey:<vault id>`) for 24 hours. After a matching finger vykey reads the key
-back and opens the vault without Argon2; that does not extend the 24 hours.
-So the master password is needed:
-
-- after every restart (the kernel keyring lives in memory only);
-- at least once a day (the kernel drops the key, even if vykey is not
-  running).
-
-These limits are fixed. Nothing to install besides fprintd: no GNOME
-Keyring or KWallet. The master password itself is never stored, and
-changing it keeps fingerprint unlock working.
-
-What this protects against, and what not:
-
-- The fingerprint only gates vykey's own UI. Any program of your user can
-  read the key while it lives, so malware in your session can open the vault
-  without a finger for up to a day. Unlike Touch ID or Windows Hello there is
-  no hardware binding. The key never touches the disk.
-- The key alone is not enough: it decrypts the database file, which must be
-  stolen as well.
-- Deleting a vault removes its key. A key that no longer opens the vault
-  (database replaced, vault re-created) is detected and removed; the next
-  unlock asks for the password.
-- The reader is claimed while vykey waits, so `sudo` in another terminal
-  falls back to its password prompt until the check ends.
-
-## Configuration
-
-| Variable             | Default                          |
-|----------------------|----------------------------------|
-| `VYKEY_DB_PATH`      | `$XDG_DATA_HOME/vykey/vykey.db` (or `~/.local/share/vykey/vykey.db`; macOS: `~/Library/Application Support/vykey/vykey.db`; Windows: `%APPDATA%\vykey\vykey.db`) |
-| `VYKEY_LOCK_TIMEOUT` | unset: the delay from Settings (5 min by default). Overrides it when set; Go duration syntax (`30s`, `1h30m`), `0` disables |
-| `SLINT_BACKEND`      | software renderer (~30 MB RSS); `winit-femtovg` renders with OpenGL (smoother on very large windows, but loads GPU drivers: ~270 MB) |
-
-Preferences chosen in the app (theme, language, auto-lock) are stored in
-`$XDG_CONFIG_HOME/vykey/settings.json` (`~/.config/vykey/settings.json`; on
-macOS and Windows in the same directory as the database). The terminal
-client reads the same file:
-
-```json
-{ "theme": "system", "language": null, "lock_timeout": 300 }
-```
-
-`lock_timeout` is in seconds, `0` = never. Values other than the presets
-(1, 5, 15, 30 min, 1 h) can be set by hand and show up in the list.
-
-## Migrating from kyp
-
-The Go app stored its vault in `kyp/kyp.db`; vykey uses `vykey/vykey.db`.
-Copy the file to the new location (close the Go app first):
-
-```sh
-# Linux
-mkdir -p ~/.local/share/vykey
-cp ~/.local/share/kyp/kyp.db ~/.local/share/vykey/vykey.db
-
-# macOS
-mkdir -p ~/Library/Application\ Support/vykey
-cp ~/Library/Application\ Support/kyp/kyp.db ~/Library/Application\ Support/vykey/vykey.db
-```
-
-```powershell
-# Windows
-New-Item -ItemType Directory -Force "$env:APPDATA\vykey"
-Copy-Item "$env:APPDATA\kyp\kyp.db" "$env:APPDATA\vykey\vykey.db"
-```
-
-If you used `KYP_DB_PATH` or `db_path` in the Go app's config, copy that file
-instead. vykey upgrades the copy on first unlock, and the Go app must not be
-used on an upgraded database (it would show encrypted titles as empty), so
-keep the original as a backup until you no longer need kyp. Pointing
-`VYKEY_DB_PATH` at the Go app's file also works, but upgrades it in place.
-
-## Translations
-
-English is the source language: UI strings are written as `@tr("...")` in
-`crates/vykey-desktop/ui/*.slint`, and texts composed in Rust go through the `Tr`
-global in `ui/i18n.slint`. Translations are gettext catalogues bundled into
-the binary at build time. To add a language:
-
-1. Create `crates/vykey-desktop/translations/<code>/LC_MESSAGES/vykey-desktop.po`
-   (copy the Russian one and replace every `msgstr`; set `Plural-Forms`).
-2. Add `("<code>", "<name in that language>")` to `LANGUAGES` in
-   `crates/vykey-desktop/src/lib.rs`.
-
-`cargo test -p vykey-desktop` fails if a catalogue misses a UI string or keeps
-one the UI no longer uses.
+Build details, CI checks and how to add a translation are in
+[docs/development.md](docs/development.md); the file format is in
+[docs/vault-format.md](docs/vault-format.md).
 
 ## License
 
-MIT. Bundled fonts: SIL OFL 1.1 (`crates/vykey-desktop/ui/fonts/`). Icons: Font
-Awesome Free, CC BY 4.0 (`crates/vykey-desktop/ui/icons/`).
+[MIT](LICENSE). Bundled fonts (Manrope, JetBrains Mono): SIL OFL 1.1. Icons:
+Font Awesome Free (CC BY 4.0) and Lucide (ISC).
