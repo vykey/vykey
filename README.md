@@ -50,43 +50,44 @@ show up as file names. Corrections welcome.</sub>
 
 ## Features
 
-- **Logins** with live 2FA (TOTP) codes and a password generator with a
-  strength meter
-- **Payment cards** with card-number validation, card brand and expiry
-  warnings
-- **Secure notes**, favourites and coloured folders
-- **Several vaults**, each with its own master password
-- **Security audit**, fully offline: weak, reused and old passwords, and
-  accounts without 2FA
-- **Auto-lock** after inactivity and a clipboard that clears itself after
-  30 seconds
-- **Fingerprint unlock** on Linux (fprintd), limited to a day and gone after
-  a reboot
-- **Import from Bitwarden** (CSV)
-- **Light and dark themes**, English and Russian interface
+- Several vaults in one database, each with its own master password:
+  create, switch, rename, change the master password, delete
+- Logins, payment cards (Luhn check, payment system, expiry warnings) and
+  secure notes; favourites and coloured folders
+- Everything except timestamps is encrypted, titles included
+- Unlock / create vault, entry list with search and sorting, entry details
+  with copy, reveal and live 2FA (TOTP) codes
+- Create, edit and delete entries; password generator with strength meter
+- Offline security audit: weak, reused and stale passwords, 2FA coverage
+- Settings: light, dark or system theme; interface language (English,
+  Russian; follows the system by default); auto-lock delay
+- Auto-lock on inactivity (5 min by default), clipboard auto-clear after 30 s
+- Fingerprint unlock on Linux (fprintd), opt-in per vault — see below
+- Terminal client `vy`: full-screen TUI and Bitwarden CSV import
 
-## Security in a nutshell
+## Layout
 
-Your master password is stretched with Argon2id (64 MB of memory per guess)
-into a key that unlocks the vault's random data key. Every field is
-encrypted separately with AES-256-GCM. The master password is never stored,
-and changing it takes a moment because the entries do not need re-encrypting.
+```
+crates/vykey-core      vault format, crypto, storage, TOTP, audit (no UI)
+crates/vykey-biometric fingerprint unlock: fprintd + kernel keyring (Linux)
+crates/vykey-desktop   Slint desktop app, binary `vykey` (ui/, src/, translations/)
+crates/vykey-cli       terminal client, binary `vy` (ratatui)
+crates/vykey-sync-proto wire types of the sync protocol (client and server)
+crates/vykey-server    sync server, binary `vykey-server`
+docs/                  vault format and sync protocol specs
+packaging/             macOS bundle, server systemd unit
+assets/logo/           logo, wordmark, lockup and app icon (PNG)
+testdata/              fixture databases created by the Go app
+```
 
-The format is open and documented in [docs/vault-format.md](docs/vault-format.md).
-What vykey does *not* protect against (a weak master password, malware
-running as you while the vault is open) is spelled out in
-[docs/usage.md](docs/usage.md#fingerprint-unlock-linux).
-
-## Get started
-
-vykey is developed and tested on Linux. Prebuilt packages are on the way;
-for now, build it with [Rust](https://rustup.rs):
+## Build
 
 ```sh
-git clone https://github.com/vykey/vykey && cd vykey
-cargo build --release -p vykey-desktop -p vykey-cli
-./target/release/vykey   # desktop app
-./target/release/vy      # terminal client
+cargo run -p vykey-desktop             # debug
+cargo build -p vykey-desktop --release # → target/release/vykey
+cargo build -p vykey-cli --release     # → target/release/vy
+cargo build -p vykey-server --release  # → target/release/vykey-server
+cargo test --workspace
 ```
 
 On Linux you need the `fontconfig` and `libxkbcommon` development headers.
@@ -98,7 +99,101 @@ Go predecessor of vykey? Your database opens as is: see
 More in the [user guide](docs/usage.md): terminal shortcuts, fingerprint
 unlock, configuration.
 
-## Roadmap
+`vy import` asks for the master password (it is never a command-line
+argument), imports logins and secure notes, and turns Bitwarden folders into
+vykey folders.
+
+| Screen  | Keys |
+|---------|------|
+| vaults  | `↑`/`↓` pick a vault, `enter` unlock, `n` new vault, `q` quit; `esc` on the password prompt returns here; `ctrl+f` retries the fingerprint |
+| list    | `↑`/`↓` (`j`/`k`) move, `enter` open, `/` filter, `n` new entry, `v` switch vault, `q` quit |
+| details | `u` copy username, `c` copy password (card: number), `t` copy TOTP, `v` copy CVV, `p`/`space` show/hide, `f` favourite, `e` edit, `d` delete, `esc` back |
+| form    | `tab`/`shift+tab` next/previous field, `←`/`→` entry type (new entries), `ctrl+g` generate password, `ctrl+p` show/hide, `ctrl+s` save, `esc` back |
+| any     | `ctrl+l` lock, `ctrl+c` quit |
+
+The terminal client is English only.
+
+## Fingerprint unlock (Linux)
+
+With a reader supported by [fprintd](https://fprint.freedesktop.org/) and an
+enrolled finger (`fprintd-enroll`), a vault can be opened like `sudo` with
+`pam_fprintd`: the unlock screen shows "Place your right index finger on the
+fingerprint reader" while the password field keeps working. Three attempts,
+30 s timeout; then "Use fingerprint" (desktop) or `ctrl+f` (TUI) retries.
+
+Turn it on per vault in the desktop app (Settings → Security) or with
+`vy fingerprint enable`. Each time the master password opens such a vault,
+its data key goes into the kernel keyring (`keyctl`, user keyring, key
+`vykey:<vault id>`) for 24 hours. After a matching finger vykey reads the key
+back and opens the vault without Argon2; that does not extend the 24 hours.
+So the master password is needed:
+
+- after every restart (the kernel keyring lives in memory only);
+- at least once a day (the kernel drops the key, even if vykey is not
+  running).
+
+These limits are fixed. Nothing to install besides fprintd: no GNOME
+Keyring or KWallet. The master password itself is never stored, and
+changing it keeps fingerprint unlock working.
+
+What this protects against, and what not:
+
+- The fingerprint only gates vykey's own UI. Any program of your user can
+  read the key while it lives, so malware in your session can open the vault
+  without a finger for up to a day. Unlike Touch ID or Windows Hello there is
+  no hardware binding. The key never touches the disk.
+- The key alone is not enough: it decrypts the database file, which must be
+  stolen as well.
+- Deleting a vault removes its key. A key that no longer opens the vault
+  (database replaced, vault re-created) is detected and removed; the next
+  unlock asks for the password.
+- The reader is claimed while vykey waits, so `sudo` in another terminal
+  falls back to its password prompt until the check ends.
+
+## Sync server
+
+`vykey-server` keeps encrypted copies of vaults so several devices can
+sync; it never sees their contents. Accounts are anonymous: creating one
+returns a token (`vy1-…`), the only credential. Protocol, data layout and
+what the server can see: [docs/sync-protocol.md](docs/sync-protocol.md).
+The clients do not sync yet; this is the server side.
+
+```sh
+vykey-server                          # serve on 127.0.0.1:8470, ./vykey-server.redb
+vykey-server --db /var/lib/vykey-server/sync.redb --backup-dir /var/lib/vykey-server/backups
+vykey-server account new              # (server stopped) create an account, print the token
+VYKEY_SERVER_INVITE_KEY=… vykey-server  # clients with the key may create accounts
+vykey-server --open-registration      # anyone may create an account
+vykey-server --open-registration --pow 24  # …after ~1 s of proof of work
+vykey-server stats | gc | backup FILE # (server stopped)
+vykey-server --help
+```
+
+Registration is closed by default: accounts come from `account new`, or
+from clients that send the invite key, unless the server runs with
+`--open-registration`. It speaks plain HTTP: run it behind a TLS reverse proxy with
+`--trust-proxy` (systemd unit in [packaging/server/](packaging/server/)). One
+redb file holds everything; tombstones older than 90 days are collected
+daily, and `--backup-dir` writes a daily consistent copy (7 kept).
+Built on redb (storage) and hyper (HTTP/1.1, on tokio); the protocol
+logic itself is synchronous and transport-independent (`api.rs`).
+
+## Configuration
+
+| Variable             | Default                          |
+|----------------------|----------------------------------|
+| `VYKEY_DB_PATH`      | `$XDG_DATA_HOME/vykey/vykey.db` (or `~/.local/share/vykey/vykey.db`; macOS: `~/Library/Application Support/vykey/vykey.db`; Windows: `%APPDATA%\vykey\vykey.db`) |
+| `VYKEY_LOCK_TIMEOUT` | unset: the delay from Settings (5 min by default). Overrides it when set; Go duration syntax (`30s`, `1h30m`), `0` disables |
+| `SLINT_BACKEND`      | software renderer (~30 MB RSS); `winit-femtovg` renders with OpenGL (smoother on very large windows, but loads GPU drivers: ~270 MB) |
+
+Preferences chosen in the app (theme, language, auto-lock) are stored in
+`$XDG_CONFIG_HOME/vykey/settings.json` (`~/.config/vykey/settings.json`; on
+macOS and Windows in the same directory as the database). The terminal
+client reads the same file:
+
+```json
+{ "theme": "system", "language": null, "lock_timeout": 300 }
+```
 
 Next on the list:
 

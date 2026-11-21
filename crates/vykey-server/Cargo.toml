@@ -1,0 +1,32 @@
+[package]
+name = "vykey-server"
+description = "Zero-knowledge sync server for vykey"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "vykey-server"
+path = "src/main.rs"
+
+[dependencies]
+getrandom = "0.4.3"
+hmac = "0.13.0"
+http-body-util = "0.1.5"
+hyper = { version = "1.12.0", features = ["http1", "server"] }
+hyper-util = { version = "0.1.21", features = ["http1", "server-graceful", "tokio"] }
+redb = "4.5.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.11.1"
+tokio = { version = "1.54.1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+vykey-sync-proto.workspace = true
+
+[dev-dependencies]
+tempfile = "3.27.0"
+
+[lints]
+workspace = true
