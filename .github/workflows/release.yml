@@ -111,12 +111,21 @@ jobs:
           codesign --force --deep --sign - "$app"
           codesign --force --sign - "$out/vy"
 
-          ditto -c -k --keepParent "$out" "dist/$name.zip"
+          # Disk image: the app next to an Applications link to drag it
+          # onto, plus `vy`, LICENSE and README. hdiutil on CI runners
+          # sometimes fails with "Resource busy"; retry a few times.
+          ln -s /Applications "$out/Applications"
+          for attempt in 1 2 3 4 5; do
+            hdiutil create -volname "vykey $version" -srcfolder "$out" \
+              -fs HFS+ -format UDZO -ov "dist/$name.dmg" && break
+            [ "$attempt" = 5 ] && exit 1
+            sleep 5
+          done
 
       - uses: actions/upload-artifact@v4
         with:
           name: macos
-          path: dist/*.zip
+          path: dist/*.dmg
           if-no-files-found: error
 
   windows:
@@ -150,9 +159,62 @@ jobs:
           path: dist/*.zip
           if-no-files-found: error
 
+  server-linux:
+    # Static musl binaries: no glibc dependency, run on any distribution
+    # (Alpine included). The server has no C dependencies, so no musl-gcc
+    # is needed. aarch64 builds natively on GitHub's ARM runner.
+    name: server-linux (${{ matrix.arch }})
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    env:
+      TARGET: ${{ matrix.arch }}-unknown-linux-musl
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ env.TARGET }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: server-${{ matrix.arch }}
+
+      - name: Version
+        id: version
+        shell: bash
+        run: bash .github/scripts/version.sh >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        run: cargo build --release --locked -p vykey-server --target "$TARGET"
+
+      - name: Package
+        run: |
+          bin=target/$TARGET/release/vykey-server
+          # Fails here rather than in a user's hands if it is not static.
+          file "$bin" | grep -q 'statically linked'
+          "$bin" --version
+
+          name=vykey-server-${{ steps.version.outputs.version }}-linux-${{ matrix.arch }}
+          mkdir -p "dist/$name"
+          cp "$bin" LICENSE README.md docs/sync-protocol.md \
+            packaging/server/vykey-server.service "dist/$name/"
+          tar -C dist -czf "dist/$name.tar.gz" "$name"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server-linux-${{ matrix.arch }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [linux, macos, windows]
+    needs: [linux, macos, windows, server-linux]
     runs-on: ubuntu-latest
     permissions:
       contents: write
