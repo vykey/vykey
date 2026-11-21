@@ -196,8 +196,15 @@ jobs:
       - name: Package
         run: |
           bin=target/$TARGET/release/vykey-server
-          # Fails here rather than in a user's hands if it is not static.
-          file "$bin" | grep -q 'statically linked'
+          # Fails here rather than in a user's hands if it is not static:
+          # no dynamic loader and no shared libraries. (`file` says
+          # "static-pie linked" for Rust's musl binaries, not "statically
+          # linked", so it is not a reliable test.)
+          if readelf -lW "$bin" | grep -q 'INTERP' || readelf -dW "$bin" | grep -q 'NEEDED'; then
+            echo "$bin is dynamically linked:" >&2
+            file "$bin" >&2
+            exit 1
+          fi
           "$bin" --version
 
           name=vykey-server-${{ steps.version.outputs.version }}-linux-${{ matrix.arch }}
