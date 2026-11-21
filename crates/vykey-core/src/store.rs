@@ -15,7 +15,7 @@ use crate::crypto::{self, Key};
 use crate::error::{Error, Result};
 use crate::schema;
 
-fn now() -> i64 {
+pub(crate) fn now() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
@@ -38,10 +38,12 @@ pub struct VaultMeta {
     pub updated_at: i64,
 }
 
-/// An unlocked vault: metadata plus the data key.
+/// An unlocked vault: metadata plus the data key. `Clone` copies the key,
+/// e.g. for a sync worker thread; every copy wipes it on drop.
+#[derive(Clone)]
 pub struct Vault {
-    meta: VaultMeta,
-    key: Key,
+    pub(crate) meta: VaultMeta,
+    pub(crate) key: Key,
 }
 
 /// Derives the password key and recovers the data key. CPU-heavy (Argon2id).
@@ -119,24 +121,24 @@ impl Vault {
         &self.meta
     }
 
-    fn seal(&self, value: Option<&str>) -> Result<Option<Vec<u8>>> {
+    pub(crate) fn seal(&self, value: Option<&str>) -> Result<Option<Vec<u8>>> {
         value
             .map(|v| crypto::encrypt(v.as_bytes(), &self.key).map_err(Error::from))
             .transpose()
     }
 
-    fn seal_data(&self, data: &EntryData) -> Result<Vec<u8>> {
+    pub(crate) fn seal_data(&self, data: &EntryData) -> Result<Vec<u8>> {
         let json =
             Zeroizing::new(serde_json::to_vec(data).map_err(|e| Error::Data(e.to_string()))?);
         Ok(crypto::encrypt(&json, &self.key)?)
     }
 
-    fn open_data(&self, blob: &[u8]) -> Result<EntryData> {
+    pub(crate) fn open_data(&self, blob: &[u8]) -> Result<EntryData> {
         let json = crypto::decrypt(blob, &self.key)?;
         serde_json::from_slice(&json).map_err(|e| Error::Data(e.to_string()))
     }
 
-    fn open(&self, value: Option<Vec<u8>>) -> Result<Option<String>> {
+    pub(crate) fn open(&self, value: Option<Vec<u8>>) -> Result<Option<String>> {
         value
             .map(|blob| {
                 let plain = crypto::decrypt(&blob, &self.key)?;
@@ -217,21 +219,21 @@ impl Card {
 /// Encrypted per-entry JSON in `entries.data` (schema v3). Holds everything
 /// that used to be plaintext (title, 2FA issuer) and the v3 additions.
 #[derive(Default, Serialize, Deserialize, Zeroize)]
-struct EntryData {
+pub(crate) struct EntryData {
     #[serde(default)]
-    title: String,
+    pub(crate) title: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    totp_issuer: Option<String>,
+    pub(crate) totp_issuer: Option<String>,
     #[serde(default)]
     #[zeroize(skip)]
-    kind: EntryKind,
+    pub(crate) kind: EntryKind,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    favorite: bool,
+    pub(crate) favorite: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    card: Option<Card>,
+    pub(crate) card: Option<Card>,
     /// Id of a folder of the same vault (schema v4).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    folder: Option<String>,
+    pub(crate) folder: Option<String>,
 }
 
 /// Decrypted entry. Secret fields are wiped from memory on drop.
@@ -321,18 +323,18 @@ pub struct Folder {
 
 /// Encrypted JSON in `folders.data` (schema v4).
 #[derive(Default, Serialize, Deserialize)]
-struct FolderData {
+pub(crate) struct FolderData {
     #[serde(default)]
-    name: String,
+    pub(crate) name: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
-    color: String,
+    pub(crate) color: String,
 }
 
 pub struct Store {
-    conn: Connection,
+    pub(crate) conn: Connection,
 }
 
-struct RawEntry {
+pub(crate) struct RawEntry {
     id: String,
     title: String,
     username: Option<Vec<u8>>,
@@ -349,11 +351,11 @@ struct RawEntry {
     data: Option<Vec<u8>>,
 }
 
-const ENTRY_COLUMNS: &str = "id, title, username, password, url, notes, totp_secret, \
+pub(crate) const ENTRY_COLUMNS: &str = "id, title, username, password, url, notes, totp_secret, \
      totp_issuer, totp_algorithm, totp_digits, totp_period, created_at, updated_at, data";
 
 impl RawEntry {
-    fn from_row(r: &Row<'_>) -> rusqlite::Result<Self> {
+    pub(crate) fn from_row(r: &Row<'_>) -> rusqlite::Result<Self> {
         Ok(Self {
             id: r.get(0)?,
             title: r.get(1)?,
@@ -393,7 +395,7 @@ impl RawEntry {
         encrypted > 0 || only_vault
     }
 
-    fn decrypt(self, vault: &Vault) -> Result<Entry> {
+    pub(crate) fn decrypt(self, vault: &Vault) -> Result<Entry> {
         // v3 rows keep title & co in `data`; older rows still have them in
         // plaintext columns until `upgrade_entries` runs.
         let mut data = match &self.data {
@@ -426,7 +428,7 @@ impl RawEntry {
     }
 }
 
-fn meta_from_row(r: &Row<'_>) -> rusqlite::Result<VaultMeta> {
+pub(crate) fn meta_from_row(r: &Row<'_>) -> rusqlite::Result<VaultMeta> {
     Ok(VaultMeta {
         id: r.get(0)?,
         name: r.get(1)?,
@@ -460,6 +462,19 @@ fn backup(conn: &Connection, path: &Path, version: i64) -> Result<()> {
         use std::os::unix::fs::PermissionsExt;
         let _ = std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o600));
     }
+    Ok(())
+}
+
+/// Leaves a tombstone for a folder or entry about to be deleted, if it was
+/// on a server.
+fn bury(conn: &Connection, table: &str, kind: &str, id: &str) -> Result<()> {
+    conn.execute(
+        &format!(
+            "INSERT OR REPLACE INTO sync_tombstones (id, kind, vault_id, sync_rev) \
+             SELECT id, '{kind}', vault_id, sync_rev FROM {table} WHERE id = ?1 AND sync_rev > 0"
+        ),
+        [id],
+    )?;
     Ok(())
 }
 
@@ -545,7 +560,8 @@ impl Store {
         }
         let ts = now();
         let changed = self.conn.execute(
-            "UPDATE vault_meta SET salt = ?2, wrapped_key = ?3, updated_at = ?4 WHERE id = ?1",
+            "UPDATE vault_meta SET salt = ?2, wrapped_key = ?3, updated_at = ?4, \
+             dirty = 1, version = version + 1 WHERE id = ?1",
             params![vault.meta.id, wrap.salt, wrap.wrapped_key, ts],
         )?;
         if changed != 1 {
@@ -566,7 +582,8 @@ impl Store {
         }
         let ts = now();
         self.conn.execute(
-            "UPDATE vault_meta SET name = ?2, updated_at = ?3 WHERE id = ?1",
+            "UPDATE vault_meta SET name = ?2, updated_at = ?3, \
+             dirty = 1, version = version + 1 WHERE id = ?1",
             params![vault.meta.id, name, ts],
         )?;
         vault.meta.name = name.to_owned();
@@ -578,6 +595,21 @@ impl Store {
     /// Requires the unlocked vault as proof of the master password.
     pub fn delete_vault(&self, vault: Vault) -> Result<()> {
         let tx = self.conn.unchecked_transaction()?;
+        // What the server has of it must be deleted there too.
+        tx.execute(
+            "INSERT OR REPLACE INTO sync_tombstones (id, kind, vault_id, sync_rev) \
+             SELECT id, 'entry', vault_id, sync_rev FROM entries \
+             WHERE vault_id = ?1 AND sync_rev > 0 \
+             UNION ALL SELECT id, 'folder', vault_id, sync_rev FROM folders \
+             WHERE vault_id = ?1 AND sync_rev > 0 \
+             UNION ALL SELECT id, 'vault', id, sync_rev FROM vault_meta \
+             WHERE id = ?1 AND sync_rev > 0",
+            [&vault.meta.id],
+        )?;
+        tx.execute(
+            "DELETE FROM sync_inbox WHERE vault_id = ?1",
+            [&vault.meta.id],
+        )?;
         // Explicit delete as well, in case foreign keys are off.
         tx.execute("DELETE FROM entries WHERE vault_id = ?1", [&vault.meta.id])?;
         tx.execute("DELETE FROM folders WHERE vault_id = ?1", [&vault.meta.id])?;
@@ -687,9 +719,10 @@ impl Store {
         let mut data = entry.data();
         change(&mut data);
         self.conn.execute(
-            "UPDATE entries SET data = ?3, title = '', totp_issuer = NULL \
+            "UPDATE entries SET data = ?3, title = '', totp_issuer = NULL, \
+             dirty = 1, version = version + 1, modified_at = ?4 \
              WHERE id = ?1 AND vault_id = ?2",
-            params![id, vault.meta.id, vault.seal_data(&data)?],
+            params![id, vault.meta.id, vault.seal_data(&data)?, now()],
         )?;
         Ok(())
     }
@@ -755,7 +788,7 @@ impl Store {
         Ok(())
     }
 
-    fn seal_folder(vault: &Vault, name: &str, color: &str) -> Result<Vec<u8>> {
+    pub(crate) fn seal_folder(vault: &Vault, name: &str, color: &str) -> Result<Vec<u8>> {
         let data = FolderData {
             name: name.to_owned(),
             color: color.trim().to_owned(),
@@ -771,10 +804,11 @@ impl Store {
         let id = uuid::Uuid::new_v4().to_string();
         let ts = now();
         self.conn.execute(
-            "INSERT INTO folders (id, vault_id, data, position, created_at, updated_at) \
+            "INSERT INTO folders \
+             (id, vault_id, data, position, created_at, updated_at, modified_at) \
              VALUES (?1, ?2, ?3, \
                      (SELECT COALESCE(MAX(position), -1) + 1 FROM folders WHERE vault_id = ?2), \
-                     ?4, ?4)",
+                     ?4, ?4, ?4)",
             params![
                 id,
                 vault.meta.id,
@@ -790,7 +824,8 @@ impl Store {
         let name = name.trim();
         self.check_folder_name(vault, name, Some(id))?;
         let changed = self.conn.execute(
-            "UPDATE folders SET data = ?3, updated_at = ?4 WHERE id = ?1 AND vault_id = ?2",
+            "UPDATE folders SET data = ?3, updated_at = ?4, modified_at = ?4, \
+             dirty = 1, version = version + 1 WHERE id = ?1 AND vault_id = ?2",
             params![
                 id,
                 vault.meta.id,
@@ -818,11 +853,13 @@ impl Store {
             let mut data = e.data();
             data.folder = None;
             tx.execute(
-                "UPDATE entries SET data = ?3, title = '', totp_issuer = NULL \
+                "UPDATE entries SET data = ?3, title = '', totp_issuer = NULL, \
+                 dirty = 1, version = version + 1, modified_at = ?4 \
                  WHERE id = ?1 AND vault_id = ?2",
-                params![e.id, vault.meta.id, vault.seal_data(&data)?],
+                params![e.id, vault.meta.id, vault.seal_data(&data)?, now()],
             )?;
         }
+        bury(&tx, "folders", "folder", id)?;
         tx.execute(
             "DELETE FROM folders WHERE id = ?1 AND vault_id = ?2",
             [id, &vault.meta.id],
@@ -871,8 +908,8 @@ impl Store {
         self.conn.execute(
             "INSERT INTO entries (id, title, username, password, url, notes, totp_secret, \
              totp_issuer, totp_algorithm, totp_digits, totp_period, created_at, updated_at, \
-             deleted_at, vault_id, data) \
-             VALUES (?1, '', ?2, ?3, ?4, ?5, ?6, NULL, 'SHA1', 6, 30, ?7, ?7, NULL, ?8, ?9)",
+             deleted_at, vault_id, data, modified_at) \
+             VALUES (?1, '', ?2, ?3, ?4, ?5, ?6, NULL, 'SHA1', 6, 30, ?7, ?7, NULL, ?8, ?9, ?7)",
             params![
                 id,
                 vault.seal(non_empty(&input.username))?,
@@ -893,7 +930,8 @@ impl Store {
         self.check_input_folder(vault, input)?;
         let changed = self.conn.execute(
             "UPDATE entries SET title = '', username = ?2, password = ?3, url = ?4, notes = ?5, \
-             totp_secret = ?6, totp_issuer = NULL, updated_at = ?7, data = ?9 \
+             totp_secret = ?6, totp_issuer = NULL, updated_at = ?7, data = ?9, \
+             modified_at = ?7, dirty = 1, version = version + 1 \
              WHERE id = ?1 AND vault_id = ?8",
             params![
                 id,
@@ -920,15 +958,27 @@ impl Store {
         }
     }
 
-    /// Deletes an entry of `vault` permanently (same as the Go implementation).
+    /// Deletes an entry of `vault` permanently (same as the Go
+    /// implementation); a synced one leaves a tombstone for the server.
     pub fn delete_entry(&self, vault: &Vault, id: &str) -> Result<()> {
-        let changed = self.conn.execute(
+        let tx = self.conn.unchecked_transaction()?;
+        let exists = tx
+            .query_row(
+                "SELECT 1 FROM entries WHERE id = ?1 AND vault_id = ?2",
+                [id, &vault.meta.id],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some();
+        if !exists {
+            return Err(Error::EntryNotFound);
+        }
+        bury(&tx, "entries", "entry", id)?;
+        tx.execute(
             "DELETE FROM entries WHERE id = ?1 AND vault_id = ?2",
             [id, &vault.meta.id],
         )?;
-        if changed == 0 {
-            return Err(Error::EntryNotFound);
-        }
+        tx.commit()?;
         Ok(())
     }
 }
@@ -1408,7 +1458,7 @@ mod tests {
             .unwrap()
             .collect::<rusqlite::Result<_>>()
             .unwrap();
-        assert_eq!(versions, vec![0, 1, 2, 3, 4, 5]);
+        assert_eq!(versions, vec![0, 1, 2, 3, 4, 5, 6]);
         // A fresh database has nothing to back up.
         assert_eq!(
             std::fs::read_dir(dir.path())

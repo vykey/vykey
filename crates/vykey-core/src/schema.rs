@@ -16,6 +16,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0003_entry_data.sql"),
     include_str!("../migrations/0004_folders.sql"),
     include_str!("../migrations/0005_wrapped_key.sql"),
+    include_str!("../migrations/0006_sync.sql"),
 ];
 
 /// Latest schema version this crate understands.

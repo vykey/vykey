@@ -103,6 +103,41 @@ pub fn decrypt(data: &[u8], key: &Key) -> Result<Zeroizing<Vec<u8>>, CryptoError
         .map_err(|_| CryptoError::Decrypt)
 }
 
+/// AES-256-GCM with associated data, which must be given again to decrypt:
+/// binds a ciphertext to its context (sync blobs: record kind and ids), so
+/// one moved elsewhere fails to decrypt. Same layout as [`encrypt`].
+pub fn encrypt_aad(plaintext: &[u8], aad: &[u8], key: &Key) -> Result<Vec<u8>, CryptoError> {
+    let cipher = Aes256Gcm::new((&**key).into());
+    let mut nonce = [0u8; NONCE_LEN];
+    rand::fill(&mut nonce);
+    let ct = cipher
+        .encrypt(
+            (&nonce).into(),
+            aes_gcm::aead::Payload {
+                msg: plaintext,
+                aad,
+            },
+        )
+        .map_err(|_| CryptoError::Encrypt)?;
+    let mut out = Vec::with_capacity(NONCE_LEN + ct.len());
+    out.extend_from_slice(&nonce);
+    out.extend_from_slice(&ct);
+    Ok(out)
+}
+
+pub fn decrypt_aad(data: &[u8], aad: &[u8], key: &Key) -> Result<Zeroizing<Vec<u8>>, CryptoError> {
+    if data.len() < NONCE_LEN {
+        return Err(CryptoError::TooShort);
+    }
+    let (nonce, ct) = data.split_at(NONCE_LEN);
+    let cipher = Aes256Gcm::new((&**key).into());
+    let nonce = <&Nonce<_>>::try_from(nonce).map_err(|_| CryptoError::TooShort)?;
+    cipher
+        .decrypt(nonce, aes_gcm::aead::Payload { msg: ct, aad })
+        .map(Zeroizing::new)
+        .map_err(|_| CryptoError::Decrypt)
+}
+
 pub fn new_verifier(key: &Key) -> Result<Vec<u8>, CryptoError> {
     encrypt(VERIFIER_PLAINTEXT, key)
 }
@@ -141,6 +176,18 @@ mod tests {
         let wrapped = wrap_key(&key, &kek).unwrap();
         assert_eq!(*unwrap_key(&wrapped, &kek).unwrap(), *key);
         assert!(unwrap_key(&wrapped, &other).is_err());
+    }
+
+    #[test]
+    fn aad_binds_the_context() {
+        let key = generate_key();
+        let ct = encrypt_aad(b"secret", b"entry/1", &key).unwrap();
+        assert_eq!(
+            decrypt_aad(&ct, b"entry/1", &key).unwrap().as_slice(),
+            b"secret"
+        );
+        assert!(decrypt_aad(&ct, b"entry/2", &key).is_err());
+        assert!(decrypt(&ct, &key).is_err(), "AAD is part of the tag");
     }
 
     #[test]
