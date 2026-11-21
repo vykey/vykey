@@ -78,7 +78,7 @@ verifier decrypts with the resulting data key to the ASCII string
 
 Migrations live in `crates/vykey-core/migrations/` and are recorded in the
 `goose_db_version` table (kept from the Go app, which used
-[goose](https://github.com/pressly/goose)). Current version: **5**. vykey
+[goose](https://github.com/pressly/goose)). Current version: **6**. vykey
 refuses a database with a newer version than it knows.
 
 Before migrating an existing database, vykey copies it to
@@ -92,6 +92,7 @@ of that version is kept.
 | 3 | `0003_entry_data.sql` | `entries.data`: encrypted JSON (see below); plaintext `title` / `totp_issuer` move into it on unlock |
 | 4 | `0004_folders.sql` | `folders` table + index `idx_folders_vault_id`; entries refer to a folder inside `entries.data` |
 | 5 | `0005_wrapped_key.sql` | `vault_meta.wrapped_key` (see "Keys"); existing rows stay `NULL` |
+| 6 | `0006_sync.sql` | sync bookkeeping (see "Sync"): columns on `vault_meta`, `folders`, `entries`; tables `sync_tombstones`, `sync_inbox`, `sync_account`; existing rows start dirty |
 
 ### `vault_meta`
 
@@ -166,8 +167,34 @@ re-encrypts its entries without `folder` and keeps them.
 
 ### `sync_state`
 
-`device_id TEXT PK`, `server_url TEXT`, `last_synced_at INTEGER`. Reserved
-for sync, unused by the GUI.
+`device_id TEXT PK`, `server_url TEXT`, `last_synced_at INTEGER`. Created
+by the Go app, never used; vykey keeps its sync account in `sync_account`.
+
+### Sync (v6)
+
+Protocol and record format: [sync-protocol.md](sync-protocol.md).
+
+Columns added to `vault_meta`, `folders` and `entries`:
+
+| Column        | Type    | Notes |
+|---------------|---------|-------|
+| `sync_rev`    | INTEGER | server revision the row is based on; `0` = never on a server |
+| `version`     | INTEGER | edit counter, `+1` on every change; carried in the sync record |
+| `modified_at` | INTEGER | folders and entries: unix seconds of the last change of any kind (unlike `updated_at`, also favourites and folder moves); orders concurrent edits |
+| `dirty`       | INTEGER | `1` = changed since the server last saw it |
+
+Every change through `Store` sets `dirty = 1` and bumps `version`. Deleting
+a row that was on a server (`sync_rev > 0`) leaves a row in
+`sync_tombstones` (`id`, `kind`, `vault_id`, `sync_rev`) until the server
+has the deletion. `sync_inbox` (`id`, `kind`, `vault_id`, `rev`, `deleted`,
+`blob`) holds server records of vaults that were locked when they arrived
+(folders and entries need the vault key); they are merged at unlock.
+
+`sync_account` has at most one row: `server_url`, `token` (the account's
+only credential, as sensitive as the salts and verifiers in this file),
+`device_id` (random, per database), `last_rev`, `last_synced_at`.
+Connecting an account or disconnecting resets `sync_rev` to 0 and marks
+every row dirty.
 
 ## Behaviour notes
 

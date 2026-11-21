@@ -19,6 +19,9 @@ use vykey_biometric::{
 use vykey_core::audit::{self, IssueKind, Severity};
 use vykey_core::card::{self as card_fmt, ExpiryStatus};
 use vykey_core::settings::{Settings, ThemeMode};
+use vykey_core::sync::http::HttpClient;
+use vykey_core::sync::proto::{ErrorCode, Token};
+use vykey_core::sync::{self as vsync, AddressError, Report, SyncAccount, SyncError};
 use vykey_core::{
     Card, Entry, EntryInput, EntryKind, Error, Folder, Store, Vault, VaultMeta, password, totp,
 };
@@ -30,6 +33,34 @@ const CLIPBOARD_CLEAR_AFTER: Duration = Duration::from_secs(30);
 /// Length of the delete animation (see `Dust` in vault.slint).
 const SNAP_DURATION: Duration = Duration::from_millis(1500);
 const TOAST_DURATION: Duration = Duration::from_millis(2200);
+
+/// Sync server offered first in the setup dialog, next to "own server".
+/// `None`: only own servers.
+const PUBLIC_SERVER: Option<&str> = Some(vsync::CLOUD_SERVER);
+/// Delay between a local change and the sync that uploads it (changes in
+/// quick succession go together).
+const SYNC_SOON: Duration = Duration::from_secs(2);
+/// Poll interval until the server names its own (`poll_after`).
+const SYNC_POLL: Duration = Duration::from_secs(300);
+
+/// Background sync of this database.
+#[derive(Default)]
+struct SyncState {
+    /// A sync round runs on a worker thread.
+    running: bool,
+    /// When the next round starts.
+    due: Option<Instant>,
+    /// The server's poll interval.
+    poll: Option<Duration>,
+    /// Failed rounds in a row (for the retry delay).
+    failures: u32,
+    /// Why the last round failed; shown instead of the last sync time.
+    error: Option<String>,
+    /// The setup dialog waits for the server.
+    setting_up: bool,
+    /// Disconnect once the running round is over.
+    disconnect_after: bool,
+}
 
 struct App {
     ui: slint::Weak<AppWindow>,
@@ -72,6 +103,9 @@ struct App {
     fp_cancel: Option<(FpCancel, String)>,
     /// Bumped whenever that check is stopped: results of older ones are dropped.
     fp_round: u64,
+    /// Path of the database, opened again by the sync worker thread.
+    db_path: Option<PathBuf>,
+    sync: SyncState,
 }
 
 /// End of a fingerprint check on the unlock screen.
@@ -244,6 +278,7 @@ impl App {
     /// Re-renders the texts composed in Rust after a language switch; the
     /// `@tr` strings in the UI update by themselves.
     fn refresh_texts(&mut self) {
+        self.update_sync_ui();
         if self.vault.is_some() {
             self.update_list();
             self.update_detail();
@@ -278,6 +313,8 @@ impl App {
             .clamp(0, (items.len() as i32 - 1).max(0));
         ui.set_vaults(ModelRc::new(VecModel::from(items)));
         ui.set_vault_index(index);
+        // The first-run hint depends on whether there are vaults.
+        self.update_sync_ui();
     }
 
     fn start_unlock(&mut self, name: &str, password: SharedString) {
@@ -379,6 +416,8 @@ impl App {
                 }
                 ui.set_screen(Screen::Main);
                 self.refresh_fp_enabled();
+                // Fetch what other devices changed in this vault.
+                self.schedule_sync(Duration::ZERO);
             }
             Err(e) => ui.set_unlock_error(self.error_text(&e).into()),
         }
@@ -789,6 +828,7 @@ impl App {
         if let Some(e) = self.entries.iter_mut().find(|e| e.id == id) {
             e.folder = folder.clone();
         }
+        self.changed();
         let text = match folder.as_deref().and_then(|f| self.find_folder(f)) {
             Some(f) => self.say(|tr| tr.invoke_moved_to_folder(f.name.as_str().into())),
             None => self.say(|tr| tr.invoke_removed_from_folder()),
@@ -812,6 +852,7 @@ impl App {
         if let Some(e) = self.entries.iter_mut().find(|e| e.id == id) {
             e.favorite = !fav;
         }
+        self.changed();
         self.update_list();
         self.update_detail();
     }
@@ -1087,6 +1128,7 @@ impl App {
                     self.selected = Some(id);
                 }
                 self.reload();
+                self.changed();
                 self.toast(&self.say(|tr| tr.invoke_item_saved()));
             }
             Err(e) => ui.set_form_error(self.error_text(&e).into()),
@@ -1116,6 +1158,7 @@ impl App {
             self.toast(&self.error_text(&e));
             return;
         }
+        self.changed();
         // Select the neighbour of the deleted entry.
         if self.selected.as_deref() == Some(&id) {
             let pos = self.visible.iter().position(|&i| self.entries[i].id == id);
@@ -1203,6 +1246,7 @@ impl App {
                 ui.set_vault_initials(format::initials(&vault.meta().name).into());
                 ui.set_vault_dialog(0);
                 self.load_vaults();
+                self.changed();
                 self.toast(&self.say(|tr| tr.invoke_vault_renamed()));
             }
             Err(e) => ui.set_vault_dialog_error(self.error_text(&e).into()),
@@ -1237,6 +1281,7 @@ impl App {
         match result.and_then(|wrap| store.change_password(vault, wrap)) {
             Ok(()) => {
                 ui.set_vault_dialog(0);
+                self.changed();
                 self.toast(&self.say(|tr| tr.invoke_password_changed()));
             }
             Err(e) => ui.set_vault_dialog_error(self.error_text(&e).into()),
@@ -1286,6 +1331,7 @@ impl App {
             ui.set_vault_dialog_error(self.error_text(&e).into());
             return;
         }
+        self.changed();
         // Its key in the keyring opens nothing any more.
         let _ = biometric::remove_key(&id);
         if self.settings.fingerprint(&id) {
@@ -1361,6 +1407,7 @@ impl App {
                 ui.set_folder_dialog(0);
                 self.folder_edit = None;
                 self.reload();
+                self.changed();
                 match created {
                     // Open the new folder, so it can be filled right away.
                     Some(id) => {
@@ -1390,6 +1437,7 @@ impl App {
             self.toast(&self.error_text(&e));
             return;
         }
+        self.changed();
         // `reload` falls back to "all entries" if this folder was shown.
         self.reload();
         self.ensure_selection();
@@ -1450,7 +1498,331 @@ impl App {
             self.toast_until = None;
             self.ui().set_toast("".into());
         }
+        if !self.sync.running && self.sync.due.is_some_and(|t| Instant::now() >= t) {
+            self.start_sync();
+        }
+        // "synced 3 minutes ago" moves on.
+        if ui.get_screen() == Screen::Main && ui.get_page() == Page::Settings {
+            self.update_sync_ui();
+        }
     }
+
+    // ---------- sync ----------
+
+    fn sync_account(&self) -> Option<SyncAccount> {
+        self.store.as_ref()?.sync_account().ok().flatten()
+    }
+
+    /// Something was saved: upload it shortly.
+    fn changed(&mut self) {
+        self.schedule_sync(SYNC_SOON);
+    }
+
+    /// Runs a sync round after `delay` (or earlier, if one is due earlier).
+    fn schedule_sync(&mut self, delay: Duration) {
+        if self.sync_account().is_none() {
+            self.sync.due = None;
+            return;
+        }
+        let at = Instant::now() + delay;
+        self.sync.due = Some(self.sync.due.map_or(at, |t| t.min(at)));
+    }
+
+    fn update_sync_ui(&self) {
+        let ui = self.ui();
+        let account = self.sync_account();
+        ui.set_sync_connected(account.is_some());
+        ui.set_sync_busy(self.sync.running);
+        ui.set_sync_failed(self.sync.error.is_some());
+        let tr = ui.global::<Tr>();
+        // First run: fetching vaults instead of creating one.
+        ui.set_sync_offer(account.is_none() && self.store.is_some());
+        let note = match &account {
+            Some(a) if self.vaults.is_empty() => match &self.sync.error {
+                Some(err) => err.clone(),
+                None if self.sync.running || a.last_synced_at.is_none() => {
+                    tr.invoke_sync_fetching(server_name(&tr, a)).into()
+                }
+                None => tr.invoke_sync_account_empty().into(),
+            },
+            _ => String::new(),
+        };
+        ui.set_sync_note(note.into());
+        let status = account.map_or_else(String::new, |a| {
+            let host = server_name(&tr, &a);
+            match (&self.sync.error, a.last_synced_at) {
+                (Some(err), _) => tr.invoke_sync_failed(host, err.into()),
+                (None, Some(at)) => {
+                    tr.invoke_sync_synced(host, text::relative(&tr, at, now_unix()).into())
+                }
+                (None, None) => tr.invoke_sync_never(host),
+            }
+            .into()
+        });
+        ui.set_sync_status(status.into());
+    }
+
+    fn sync_error_text(&self, e: &SyncError) -> String {
+        let ui = self.ui();
+        let tr = ui.global::<Tr>();
+        match e {
+            SyncError::Network(_) => tr.invoke_sync_offline().into(),
+            SyncError::Address(AddressError::Insecure) => tr.invoke_sync_insecure().into(),
+            SyncError::Address(AddressError::Invalid) => tr.invoke_sync_bad_address().into(),
+            SyncError::Store(err) => self.error_text(err),
+            SyncError::Server { code, status, .. } => match code {
+                Some(ErrorCode::Unauthorized) => tr.invoke_sync_unknown_account().into(),
+                Some(ErrorCode::RegistrationClosed) => tr.invoke_sync_registration_closed().into(),
+                Some(ErrorCode::QuotaExceeded) => tr.invoke_sync_quota().into(),
+                Some(ErrorCode::RateLimited) => tr.invoke_sync_busy_server().into(),
+                _ if *status == 502 || *status == 503 || *status == 504 => {
+                    tr.invoke_sync_busy_server().into()
+                }
+                _ => tr.invoke_sync_error(e.to_string().into()).into(),
+            },
+            _ => tr.invoke_sync_error(e.to_string().into()).into(),
+        }
+    }
+
+    /// One sync round on a worker thread, with its own database connection
+    /// and a copy of the unlocked vault (if any).
+    fn start_sync(&mut self) {
+        self.sync.due = None;
+        let (Some(path), Some(account)) = (self.db_path.clone(), self.sync_account()) else {
+            return;
+        };
+        self.sync.running = true;
+        self.update_sync_ui();
+        let vault = self.vault.clone();
+        let vault_id = vault.as_ref().map(|v| v.meta().id.clone());
+        std::thread::spawn(move || {
+            let result = (|| -> Result<Report, SyncError> {
+                let store = Store::open(&path)?;
+                let client = HttpClient::new(&account.server_url)?.with_token(&account.token);
+                vsync::sync(&store, vault.as_ref(), &client)
+            })();
+            drop(vault); // the key copy is wiped
+            let _ = slint::invoke_from_event_loop(move || {
+                with_app(|app| app.finish_sync(result, vault_id))
+            });
+        });
+    }
+
+    fn finish_sync(&mut self, result: Result<Report, SyncError>, vault_id: Option<String>) {
+        self.sync.running = false;
+        if self.sync.disconnect_after {
+            self.disconnect_sync();
+            return;
+        }
+        let open_id = self.vault.as_ref().map(|v| v.meta().id.clone());
+        let same_vault = vault_id.is_some() && vault_id == open_id;
+        match result {
+            Ok(r) => {
+                self.sync.failures = 0;
+                self.sync.error = None;
+                if let Some(secs) = r.poll_after {
+                    self.sync.poll = Some(Duration::from_secs(u64::from(secs).clamp(30, 3600)));
+                }
+                if r.open_vault_deleted && same_vault {
+                    let name = self.vault.as_ref().map(|v| v.meta().name.clone());
+                    self.lock();
+                    if let Some(name) = name {
+                        self.toast(&self.say(|tr| tr.invoke_sync_vault_gone(name.as_str().into())));
+                    }
+                } else {
+                    if r.vaults_changed {
+                        self.refresh_open_vault();
+                        self.load_vaults();
+                    }
+                    if same_vault && r.open_vault_changed {
+                        self.reload();
+                    }
+                }
+                for name in &r.password_changed {
+                    let text = self.say(|tr| tr.invoke_sync_password_changed(name.as_str().into()));
+                    self.toast(&text);
+                }
+                // Unlocked (or switched) during the round: its contents next.
+                if open_id != vault_id && open_id.is_some() {
+                    self.schedule_sync(Duration::ZERO);
+                }
+                self.schedule_sync(self.sync.poll.unwrap_or(SYNC_POLL));
+            }
+            Err(e) => {
+                self.sync.failures += 1;
+                self.sync.error = Some(self.sync_error_text(&e));
+                let wait = match &e {
+                    SyncError::Server {
+                        retry_after: Some(s),
+                        ..
+                    } => Duration::from_secs(*s),
+                    _ => retry_delay(self.sync.failures),
+                };
+                self.schedule_sync(wait);
+            }
+        }
+        self.update_sync_ui();
+    }
+
+    /// After a sync changed vault records: the open vault may have been
+    /// renamed (or re-keyed with the same data key) on another device.
+    fn refresh_open_vault(&mut self) {
+        let (Some(store), Some(vault)) = (&self.store, &self.vault) else {
+            return;
+        };
+        let Ok(vaults) = store.list_vaults() else {
+            return;
+        };
+        let Some(meta) = vaults.into_iter().find(|m| m.id == vault.meta().id) else {
+            return;
+        };
+        match Vault::unlock_with_key(meta, vault.key().clone()) {
+            Ok(v) => {
+                let ui = self.ui();
+                ui.set_vault_name(v.meta().name.as_str().into());
+                ui.set_vault_initials(format::initials(&v.meta().name).into());
+                self.vault = Some(v);
+            }
+            // The key no longer opens it: lock, the password will tell.
+            Err(_) => self.lock(),
+        }
+    }
+
+    fn start_sync_create(&mut self, server: &str, invite: &str) {
+        if self.sync.setting_up {
+            return;
+        }
+        let (server, invite) = (server.to_owned(), invite.to_owned());
+        self.begin_setup();
+        std::thread::spawn(move || {
+            let result = HttpClient::new(&server).and_then(|c| {
+                let token = c.create_account(Some(invite.as_str()))?;
+                Ok((c.server_url().to_owned(), token))
+            });
+            let _ = slint::invoke_from_event_loop(move || {
+                with_app(|app| app.finish_sync_setup(result, true))
+            });
+        });
+    }
+
+    fn start_sync_join(&mut self, server: &str, token: &str) {
+        if self.sync.setting_up {
+            return;
+        }
+        let Ok(token) = token.parse::<Token>() else {
+            let text = self.say(|tr| tr.invoke_sync_bad_token());
+            self.ui().set_sync_dialog_error(text.into());
+            return;
+        };
+        let server = server.to_owned();
+        self.begin_setup();
+        std::thread::spawn(move || {
+            let result = HttpClient::new(&server).and_then(|c| {
+                let c = c.with_token(&token);
+                // Checks the token before anything is stored.
+                c.account_info()?;
+                Ok((c.server_url().to_owned(), token))
+            });
+            let _ = slint::invoke_from_event_loop(move || {
+                with_app(|app| app.finish_sync_setup(result, false))
+            });
+        });
+    }
+
+    fn begin_setup(&mut self) {
+        self.sync.setting_up = true;
+        let ui = self.ui();
+        ui.set_sync_dialog_busy(true);
+        ui.set_sync_dialog_error("".into());
+    }
+
+    fn finish_sync_setup(&mut self, result: Result<(String, Token), SyncError>, created: bool) {
+        self.sync.setting_up = false;
+        let ui = self.ui();
+        ui.set_sync_dialog_busy(false);
+        let (url, token) = match result {
+            Ok(r) => r,
+            Err(e) => {
+                ui.set_sync_dialog_error(self.sync_error_text(&e).into());
+                return;
+            }
+        };
+        let Some(store) = &self.store else {
+            return;
+        };
+        if let Err(e) = store.set_sync_account(&url, &token) {
+            ui.set_sync_dialog_error(self.error_text(&e).into());
+            return;
+        }
+        self.sync = SyncState::default();
+        if created {
+            // Shown once, to be saved; the dialog closes with "I saved it".
+            ui.set_sync_new_token(token.to_string().into());
+        } else {
+            ui.set_sync_dialog_open(false);
+            self.toast(&self.say(|tr| tr.invoke_sync_on()));
+        }
+        self.schedule_sync(Duration::ZERO);
+        self.update_sync_ui();
+    }
+
+    fn sync_dialog_done(&mut self) {
+        let ui = self.ui();
+        ui.set_sync_new_token("".into());
+        ui.set_sync_dialog_open(false);
+        self.toast(&self.say(|tr| tr.invoke_sync_on()));
+    }
+
+    fn copy_sync_token(&mut self) {
+        if let Some(a) = self.sync_account() {
+            self.copy(&a.token.to_string());
+        }
+    }
+
+    fn disconnect_sync(&mut self) {
+        if self.sync.running {
+            // The worker still writes sync state; wait for it.
+            self.sync.disconnect_after = true;
+            return;
+        }
+        let Some(store) = &self.store else {
+            return;
+        };
+        if let Err(e) = store.clear_sync_account() {
+            self.toast(&self.error_text(&e));
+            return;
+        }
+        self.sync = SyncState::default();
+        self.update_sync_ui();
+        self.toast(&self.say(|tr| tr.invoke_sync_off()));
+    }
+}
+
+/// How the account's server is named in the UI: "vykey Cloud" or its host.
+fn server_name(tr: &Tr, a: &SyncAccount) -> SharedString {
+    if PUBLIC_SERVER == Some(a.server_url.as_str()) {
+        tr.invoke_sync_cloud()
+    } else {
+        server_host(&a.server_url).into()
+    }
+}
+
+/// "sync.example.com" out of "https://sync.example.com/vykey".
+fn server_host(url: &str) -> &str {
+    let rest = url.split_once("://").map_or(url, |(_, r)| r);
+    rest.split('/').next().unwrap_or(rest)
+}
+
+/// Wait after `failures` failed rounds in a row: 15 s, 30 s, 1 min, … up
+/// to 5 min, plus a few seconds so devices do not retry in step.
+fn retry_delay(failures: u32) -> Duration {
+    let base = 15u64
+        .saturating_mul(1 << failures.saturating_sub(1).min(5))
+        .min(300);
+    let jitter = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| u64::from(d.subsec_millis()) % 5000);
+    Duration::from_secs(base) + Duration::from_millis(jitter)
 }
 
 /// Folder id, name and colour for the entry form ("" when none).
@@ -1571,8 +1943,9 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
     ui.set_language_mode(language_index(settings.language.as_deref()));
     ui.set_language_names(language_names(&ui));
 
-    let (store, store_error) = match vykey_core::paths::default_db_path() {
-        Some(path) => match Store::open(&path) {
+    let db_path = vykey_core::paths::default_db_path();
+    let (store, store_error) = match db_path.as_deref() {
+        Some(path) => match Store::open(path) {
             Ok(s) => (Some(s), None),
             Err(e) => (
                 None,
@@ -1636,7 +2009,16 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
             fp_support: Availability::Unsupported,
             fp_cancel: None,
             fp_round: 0,
+            db_path,
+            sync: SyncState::default(),
         });
+    });
+    ui.set_sync_public_server(PUBLIC_SERVER.unwrap_or("").into());
+    ui.set_sync_public_host(PUBLIC_SERVER.map_or("", server_host).into());
+    with_app(|app| {
+        app.update_sync_ui();
+        // Vault records (new vaults, renames) arrive even before an unlock.
+        app.schedule_sync(Duration::ZERO);
     });
     with_app(App::load_vaults);
     with_app(|app| app.update_lock_choices());
@@ -1860,6 +2242,37 @@ pub fn create() -> Result<AppWindow, slint::PlatformError> {
             app.rename_vault(&name);
         })
     });
+    ui.on_sync_create(|server, invite| {
+        with_app(|app| {
+            app.touch();
+            app.start_sync_create(&server, &invite);
+        })
+    });
+    ui.on_sync_join(|server, token| {
+        with_app(|app| {
+            app.touch();
+            app.start_sync_join(&server, &token);
+        })
+    });
+    ui.on_sync_now(|| {
+        with_app(|app| {
+            app.touch();
+            app.schedule_sync(Duration::ZERO);
+        })
+    });
+    ui.on_sync_copy_token(|| {
+        with_app(|app| {
+            app.touch();
+            app.copy_sync_token();
+        })
+    });
+    ui.on_sync_disconnect(|| {
+        with_app(|app| {
+            app.touch();
+            app.disconnect_sync();
+        })
+    });
+    ui.on_sync_dialog_done(|| with_app(App::sync_dialog_done));
     ui.on_change_password(|current, new| {
         with_app(|app| {
             app.touch();
@@ -1942,6 +2355,22 @@ mod tests {
             .collect();
         listed.sort();
         assert_eq!(bundled, listed, "LANGUAGES and translations/ disagree");
+    }
+
+    #[test]
+    fn sync_status_host() {
+        assert_eq!(server_host("https://sync.example.com"), "sync.example.com");
+        assert_eq!(server_host("https://example.com/vykey"), "example.com");
+        assert_eq!(server_host("http://127.0.0.1:8470"), "127.0.0.1:8470");
+    }
+
+    #[test]
+    fn sync_retry_grows_and_is_capped() {
+        let secs = |n| retry_delay(n).as_secs();
+        assert!((15..20).contains(&secs(1)));
+        assert!((30..35).contains(&secs(2)));
+        assert!((300..305).contains(&secs(6)));
+        assert!((300..305).contains(&secs(40)));
     }
 
     #[test]

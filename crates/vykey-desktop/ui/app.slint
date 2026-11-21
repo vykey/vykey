@@ -11,6 +11,7 @@ import { VaultMain, EntryItem, EntryDetail, DeleteFx } from "vault.slint";
 import { EntryFormModal, ConfirmDeleteModal, EntryForm } from "entry-form.slint";
 import { SecurityMain, SecurityStats, Issue } from "security.slint";
 import { RenameVaultModal, ChangePasswordModal, DeleteVaultModal, FolderModal, DeleteFolderModal } from "vault-dialogs.slint";
+import { SyncSetupModal } from "sync.slint";
 
 export { Tr, Backend, DeleteFx, MaskResult, Theme, VaultItem, EntryItem, EntryDetail, EntryForm, SecurityStats, Issue, Page, FolderItem, FolderPalette }
 
@@ -85,6 +86,27 @@ export component AppWindow inherits Window {
     in property <int> fp-support;
     in property <bool> fp-enabled;
     callback set-fingerprint(bool);
+    // Sync (Settings → Sync and the setup dialog).
+    in property <bool> sync-connected;
+    in property <string> sync-status;
+    in property <bool> sync-failed;
+    in property <bool> sync-busy;
+    in property <string> sync-public-server;
+    in property <string> sync-public-host;
+    in-out property <bool> sync-dialog-open;
+    in property <bool> sync-dialog-busy;
+    in-out property <string> sync-dialog-error;
+    in property <string> sync-new-token;
+    // First run: fetch vaults from sync (see UnlockScreen).
+    in property <bool> sync-offer;
+    in property <string> sync-note;
+    property <int> sync-dialog-start: 0;
+    callback sync-create(string /* server */, string /* invite key */);
+    callback sync-join(string /* server */, string /* token */);
+    callback sync-now();
+    callback sync-copy-token();
+    callback sync-disconnect();
+    callback sync-dialog-done();
     callback select-filter(int);
     callback select-folder(string);
     callback toggle-favorite(string);
@@ -186,6 +208,13 @@ export component AppWindow inherits Window {
             create(name, password) => { root.create-vault(name, password); }
             fp-retry => { root.fp-retry(); }
             context-changed => { root.unlock-context-changed(); }
+            sync-offer: root.sync-offer;
+            sync-note: root.sync-note;
+            restore => {
+                root.sync-dialog-start = 1;
+                root.sync-dialog-error = "";
+                root.sync-dialog-open = true;
+            }
         }
 
         if root.screen == Screen.main: HorizontalLayout {
@@ -263,6 +292,18 @@ export component AppWindow inherits Window {
                 fp-support: root.fp-support;
                 fp-enabled: root.fp-enabled;
                 set-fingerprint(on) => { root.set-fingerprint(on); }
+                sync-connected: root.sync-connected;
+                sync-status: root.sync-status;
+                sync-failed: root.sync-failed;
+                sync-busy: root.sync-busy;
+                sync-setup => {
+                    root.sync-dialog-start = 0;
+                    root.sync-dialog-error = "";
+                    root.sync-dialog-open = true;
+                }
+                sync-now => { root.sync-now(); }
+                sync-copy-token => { root.sync-copy-token(); }
+                sync-disconnect => { root.sync-disconnect(); }
             }
         }
 
@@ -310,6 +351,24 @@ export component AppWindow inherits Window {
             error <=> root.folder-dialog-error;
             save(name, color) => { root.save-folder(root.folder-edit-id, name, color); }
             cancel => { root.folder-dialog = 0; }
+        }
+
+        if root.sync-dialog-open: SyncSetupModal {
+            public-server: root.sync-public-server;
+            public-host: root.sync-public-host;
+            start-mode: root.sync-dialog-start;
+            busy: root.sync-dialog-busy;
+            error <=> root.sync-dialog-error;
+            new-token: root.sync-new-token;
+            create(server, invite) => { root.sync-create(server, invite); }
+            join(server, token) => { root.sync-join(server, token); }
+            copy-token => { root.sync-copy-token(); }
+            done => { root.sync-dialog-done(); }
+            cancel => {
+                if !root.sync-dialog-busy {
+                    root.sync-dialog-open = false;
+                }
+            }
         }
 
         if root.folder-dialog == 2: DeleteFolderModal {

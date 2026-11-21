@@ -1,12 +1,13 @@
 //! `vy` — terminal client of vykey: a full-screen TUI over the same vault
 //! database as the desktop app, plus `vy import` for Bitwarden exports and
 //! `vy fingerprint` for fingerprint unlock, `vy passwd` to change a master
-//! password.
+//! password, `vy sync` for the sync server.
 
 mod clipboard;
 mod fingerprint;
 mod import;
 mod passwd;
+mod sync;
 mod tui;
 
 use std::path::PathBuf;
@@ -59,6 +60,11 @@ enum Command {
         #[arg(long, value_name = "NAME")]
         vault: Option<String>,
     },
+    /// Sync with a vykey server
+    Sync {
+        #[command(subcommand)]
+        action: sync::Action,
+    },
 }
 
 fn main() -> ExitCode {
@@ -88,6 +94,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         Command::Fingerprint { action, vault } => {
             fingerprint::run(&store, action, vault.as_deref())?
         }
+        Command::Sync { action } => sync::run(&store, action)?,
     }
     Ok(())
 }

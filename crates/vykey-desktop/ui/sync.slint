@@ -1,0 +1,408 @@
+// Sync setup dialog: pick a server, then create an account or connect with
+// a token; after creating one, the token is shown once to be saved.
+
+import { Theme, Icons } from "theme.slint";
+import { Field, FieldLabel, PrimaryButton, SecondaryButton, LinkText, Icon } from "components.slint";
+import { Modal } from "entry-form.slint";
+import { DialogHeader } from "vault-dialogs.slint";
+
+// One option of a two-way choice.
+component Choice inherits Rectangle {
+    in property <string> text;
+    in property <bool> active;
+    callback clicked;
+
+    horizontal-stretch: 1;
+    border-radius: 9px;
+    background: root.active ? Theme.bg-elevated : ta.has-hover ? Theme.bg-hover : transparent;
+    border-width: root.active ? 1px : 0;
+    border-color: Theme.border-subtle;
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-checked: root.active;
+    accessible-action-default => { root.clicked(); }
+
+    HorizontalLayout {
+        padding: 8px;
+        alignment: center;
+        Text {
+            text: root.text;
+            font-size: 13px;
+            font-weight: root.active ? 600 : 500;
+            color: root.active ? Theme.text-primary : Theme.text-secondary;
+        }
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// A server to sync with: radio dot, icon, name and a line about it; an
+// option may carry more controls (the address of an own server), shown
+// while it is picked.
+component ServerOption inherits Rectangle {
+    in property <image> icon;
+    in property <string> title;
+    in property <string> subtitle;
+    in property <string> badge;
+    in property <bool> active;
+    callback clicked;
+
+    border-radius: 12px;
+    background: root.active ? Theme.accent.with-alpha(0.06) : ta.has-hover ? Theme.bg-hover : Theme.bg-base;
+    border-width: root.active ? 1.5px : 1px;
+    border-color: root.active ? Theme.accent : Theme.border-subtle;
+    accessible-role: button;
+    accessible-label: root.title;
+    accessible-description: root.subtitle;
+    accessible-checked: root.active;
+    accessible-action-default => { root.clicked(); }
+
+    animate background, border-color { duration: 120ms; }
+
+    // Under the content, so fields inside stay clickable.
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+
+    HorizontalLayout {
+        padding: 14px;
+        spacing: 12px;
+
+        // Radio dot
+        VerticalLayout {
+            alignment: start;
+            padding-top: 9px;
+            Rectangle {
+                width: 18px;
+                height: 18px;
+                border-radius: 9px;
+                border-width: 2px;
+                border-color: root.active ? Theme.accent : Theme.text-tertiary.with-alpha(0.6);
+                Rectangle {
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 4px;
+                    background: Theme.accent;
+                    opacity: root.active ? 1 : 0;
+                    animate opacity { duration: 120ms; }
+                }
+            }
+        }
+
+        // Icon tile
+        VerticalLayout {
+            alignment: start;
+            Rectangle {
+                width: 36px;
+                height: 36px;
+                border-radius: 10px;
+                background: root.active ? Theme.accent.with-alpha(0.14) : Theme.bg-hover;
+                Icon {
+                    source: root.icon;
+                    size: 17px;
+                    colorize: root.active ? Theme.accent : Theme.text-secondary;
+                }
+            }
+        }
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 3px;
+            alignment: start;
+            padding-top: 1px;
+
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Text {
+                    text: root.title;
+                    font-size: 14px;
+                    font-weight: 600;
+                    color: Theme.text-primary;
+                    vertical-alignment: center;
+                }
+                if root.badge != "": Rectangle {
+                    border-radius: 6px;
+                    background: Theme.accent.with-alpha(0.14);
+                    HorizontalLayout {
+                        padding-left: 7px;
+                        padding-right: 7px;
+                        padding-top: 2px;
+                        padding-bottom: 2px;
+                        Text {
+                            text: root.badge;
+                            font-size: 11px;
+                            font-weight: 600;
+                            color: Theme.accent;
+                        }
+                    }
+                }
+            }
+            Text {
+                text: root.subtitle;
+                font-size: 12px;
+                color: Theme.text-tertiary;
+                wrap: word-wrap;
+            }
+            @children
+        }
+    }
+}
+
+component Choices inherits Rectangle {
+    in property <string> first;
+    in property <string> second;
+    in-out property <int> selected;
+
+    border-radius: 11px;
+    background: Theme.bg-hover;
+    border-width: 1px;
+    border-color: Theme.border-subtle;
+
+    HorizontalLayout {
+        padding: 3px;
+        spacing: 2px;
+        Choice {
+            text: root.first;
+            active: root.selected == 0;
+            clicked => { root.selected = 0; }
+        }
+        Choice {
+            text: root.second;
+            active: root.selected == 1;
+            clicked => { root.selected = 1; }
+        }
+    }
+}
+
+export component SyncSetupModal inherits Modal {
+    // Address of the vykey Cloud server; "" = none, only an own server.
+    in property <string> public-server;
+    // Its host name, shown under the option.
+    in property <string> public-host;
+    in property <bool> busy;
+    in-out property <string> error;
+    // Set once an account was created: the dialog shows it to be saved.
+    in property <string> new-token;
+    callback create(string /* server */, string /* invite key */);
+    callback join(string /* server */, string /* token */);
+    callback copy-token();
+    callback done();
+    callback cancel();
+
+    // 0 = public server, 1 = own server
+    property <int> server-mode: root.public-server == "" ? 1 : 0;
+    // Which tab opens first: 0 = new account, 1 = existing token.
+    in property <int> start-mode: 0;
+    // 0 = new account, 1 = existing token
+    property <int> account-mode: root.start-mode;
+    property <bool> with-invite: false;
+    property <string> url-text;
+    property <string> invite-text;
+    property <string> token-text;
+
+    card-width: 460px;
+
+    function server() -> string {
+        root.server-mode == 0 ? root.public-server : root.url-text
+    }
+
+    function submit() {
+        if root.busy {
+            return;
+        }
+        if root.server-mode == 1 && root.url-text == "" {
+            root.error = @tr("Enter the server address");
+        } else if root.account-mode == 1 && root.token-text == "" {
+            root.error = @tr("Paste the account token");
+        } else if root.account-mode == 0 {
+            root.create(root.server(), root.server-mode == 1 && root.with-invite ? root.invite-text : "");
+        } else {
+            root.join(root.server(), root.token-text);
+        }
+    }
+
+    DialogHeader {
+        title: root.new-token == "" ? @tr("Set up sync") : @tr("Save your account token");
+        close => {
+            if root.new-token == "" {
+                root.cancel();
+            } else {
+                root.done();
+            }
+        }
+    }
+
+    if root.new-token == "": VerticalLayout {
+        spacing: 16px;
+
+        Text {
+            text: @tr("Vaults stay encrypted: the server only stores data it cannot read. Each vault is opened with its own master password, as here.");
+            font-size: 13px;
+            color: Theme.text-secondary;
+            wrap: word-wrap;
+        }
+
+        VerticalLayout {
+            spacing: 8px;
+            FieldLabel { text: @tr("Server"); }
+            if root.public-server != "": ServerOption {
+                icon: Icons.cloud;
+                title: @tr("vykey Cloud");
+                subtitle: @tr("{0} · ready to use, nothing to set up", root.public-host);
+                badge: @tr("Recommended");
+                active: root.server-mode == 0;
+                clicked => {
+                    root.server-mode = 0;
+                    root.error = "";
+                }
+            }
+            ServerOption {
+                icon: Icons.server;
+                title: @tr("Own server");
+                subtitle: @tr("A vykey-server you run yourself");
+                active: root.server-mode == 1;
+                clicked => { root.server-mode = 1; }
+
+                Field {
+                    text <=> root.url-text;
+                    visible: root.server-mode == 1;
+                    height: root.server-mode == 1 ? self.preferred-height : 0;
+                    label: @tr("Server address");
+                    placeholder: "https://sync.example.com";
+                    fill: Theme.bg-elevated;
+                    invalid: root.error != "" && self.text == "";
+                    edited => { root.error = ""; }
+                    accepted => { root.submit(); }
+                }
+            }
+        }
+
+        VerticalLayout {
+            spacing: 6px;
+            FieldLabel { text: @tr("Account"); }
+            Choices {
+                first: @tr("New account");
+                second: @tr("I have a token");
+                selected <=> root.account-mode;
+            }
+        }
+
+        if root.account-mode == 0: VerticalLayout {
+            spacing: 6px;
+            if !root.with-invite && root.server-mode == 1: HorizontalLayout {
+                alignment: start;
+                LinkText {
+                    text: @tr("I have an invite key");
+                    clicked => { root.with-invite = true; }
+                }
+            }
+            if root.with-invite && root.server-mode == 1: FieldLabel { text: @tr("Invite key"); }
+            Field {
+                text <=> root.invite-text;
+                visible: root.with-invite && root.server-mode == 1;
+                height: self.visible ? self.preferred-height : 0;
+                label: @tr("Invite key");
+                placeholder: @tr("From the server's owner");
+                edited => { root.error = ""; }
+                accepted => { root.submit(); }
+            }
+            Text {
+                text: @tr("Creating an account can take a few seconds: this device proves it is not a bot.");
+                font-size: 12px;
+                color: Theme.text-tertiary;
+                wrap: word-wrap;
+            }
+        }
+
+        Field {
+            text <=> root.token-text;
+            visible: root.account-mode == 1;
+            height: root.account-mode == 1 ? self.preferred-height : 0;
+            label: @tr("Account token");
+            placeholder: "vy1-…";
+            mono: true;
+            invalid: root.error != "" && root.account-mode == 1;
+            edited => { root.error = ""; }
+            accepted => { root.submit(); }
+        }
+
+        if root.error != "": Text {
+            text: root.error;
+            color: Theme.danger;
+            font-size: 12px;
+            wrap: word-wrap;
+        }
+
+        HorizontalLayout {
+            alignment: end;
+            spacing: 10px;
+            padding-top: 2px;
+
+            SecondaryButton {
+                text: @tr("Cancel");
+                clicked => { root.cancel(); }
+            }
+            PrimaryButton {
+                text: root.busy
+                    ? @tr("Connecting…")
+                    : root.account-mode == 0 ? @tr("Create account") : @tr("Connect");
+                enabled: !root.busy;
+                pad-x: 18px;
+                pad-y: 10px;
+                clicked => { root.submit(); }
+            }
+        }
+    }
+
+    if root.new-token != "": VerticalLayout {
+        spacing: 16px;
+
+        Text {
+            text: @tr("You need it to connect your other devices. It is the only key to this account: it cannot be recovered, and whoever has it can download your encrypted vaults. Keep it like a password.");
+            font-size: 13px;
+            color: Theme.text-secondary;
+            wrap: word-wrap;
+        }
+
+        Rectangle {
+            border-radius: 10px;
+            background: Theme.bg-base;
+            border-width: 1px;
+            border-color: Theme.border-subtle;
+
+            HorizontalLayout {
+                padding: 14px;
+                Text {
+                    text: root.new-token;
+                    font-family: Theme.mono;
+                    font-size: 14px;
+                    color: Theme.text-primary;
+                    wrap: char-wrap;
+                    horizontal-alignment: center;
+                }
+            }
+        }
+
+        HorizontalLayout {
+            alignment: end;
+            spacing: 10px;
+            padding-top: 2px;
+
+            SecondaryButton {
+                text: @tr("Copy");
+                clicked => { root.copy-token(); }
+            }
+            PrimaryButton {
+                text: @tr("I saved it");
+                pad-x: 18px;
+                pad-y: 10px;
+                clicked => { root.done(); }
+            }
+        }
+    }
+}

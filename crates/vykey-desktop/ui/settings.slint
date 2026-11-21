@@ -1,6 +1,6 @@
 // Settings screen: header + cards, like the security screen. Sections are
 // added here as settings grow: appearance (theme, language), security
-// (master password, auto-lock, fingerprint unlock).
+// (master password, auto-lock, fingerprint unlock), sync.
 
 import { Theme, Icons } from "theme.slint";
 import { Icon, Card, Divider, SecondaryButton } from "components.slint";
@@ -300,6 +300,17 @@ export component SettingsMain inherits VerticalLayout {
     callback set-fingerprint(bool);
     // Opens the change-master-password dialog (vault-dialog 3 in app.slint).
     callback change-password();
+    // Sync of this database (see app.slint): status is composed in Rust.
+    in property <bool> sync-connected;
+    in property <string> sync-status;
+    in property <bool> sync-failed;
+    in property <bool> sync-busy;
+    callback sync-setup();
+    callback sync-now();
+    callback sync-copy-token();
+    callback sync-disconnect();
+    // The disconnect button asks for a second click.
+    property <bool> confirm-disconnect: false;
 
     padding-top: 24px;
     padding-bottom: 24px;
@@ -420,6 +431,83 @@ export component SettingsMain inherits VerticalLayout {
                         // Turning it off always works, even without fingers.
                         enabled: root.fp-support == 2 || root.fp-enabled;
                         toggled(on) => { root.set-fingerprint(on); }
+                    }
+                }
+            }
+        }
+    }
+
+    // Sync
+    VerticalLayout {
+        spacing: 8px;
+        max-width: 760px;
+
+        SectionTitle { text: @tr("SYNC"); }
+
+        Card {
+            VerticalLayout {
+                if !root.sync-connected: SettingRow {
+                    title: @tr("Sync between devices");
+                    hint: @tr("Through a server that stores only encrypted data. All vaults of this device are synced");
+
+                    SecondaryButton {
+                        text: @tr("Set up…");
+                        font-size: 13px;
+                        pad-y: 8px;
+                        clicked => { root.sync-setup(); }
+                    }
+                }
+
+                if root.sync-connected: SettingRow {
+                    title: @tr("Sync between devices");
+                    hint: root.sync-status;
+
+                    SecondaryButton {
+                        text: root.sync-busy ? @tr("Syncing…") : @tr("Sync now");
+                        font-size: 13px;
+                        pad-y: 8px;
+                        text-color: root.sync-failed ? Theme.danger : Theme.text-secondary;
+                        clicked => {
+                            if !root.sync-busy {
+                                root.sync-now();
+                            }
+                        }
+                    }
+                }
+
+                if root.sync-connected: Divider { }
+
+                if root.sync-connected: SettingRow {
+                    title: @tr("Account token");
+                    hint: @tr("Connects another device. Keep it secret: it cannot be recovered");
+
+                    SecondaryButton {
+                        text: @tr("Copy");
+                        font-size: 13px;
+                        pad-y: 8px;
+                        clicked => { root.sync-copy-token(); }
+                    }
+                }
+
+                if root.sync-connected: Divider { }
+
+                if root.sync-connected: SettingRow {
+                    title: @tr("Disconnect this device");
+                    hint: @tr("Data stays here and on the server. Reconnecting needs the account token");
+
+                    SecondaryButton {
+                        text: root.confirm-disconnect ? @tr("Click again to disconnect") : @tr("Disconnect");
+                        font-size: 13px;
+                        pad-y: 8px;
+                        text-color: root.confirm-disconnect ? Theme.danger : Theme.text-secondary;
+                        clicked => {
+                            if root.confirm-disconnect {
+                                root.confirm-disconnect = false;
+                                root.sync-disconnect();
+                            } else {
+                                root.confirm-disconnect = true;
+                            }
+                        }
                     }
                 }
             }

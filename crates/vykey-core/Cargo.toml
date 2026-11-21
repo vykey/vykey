@@ -19,11 +19,18 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 sha1 = "0.11.0"
 thiserror = "2.0.21"
+ureq = { version = "3.5.1", optional = true, default-features = false, features = ["json", "rustls"] }
 uuid = { version = "1.29.3", features = ["v4"] }
+vykey-sync-proto.workspace = true
 zeroize = { version = "1.9.2", features = ["derive"] }
+
+[features]
+# HTTP client for the sync server (ureq, rustls).
+http = ["dep:ureq"]
 
 [lints]
 workspace = true
 
 [dev-dependencies]
 tempfile = "3.27.0"
+vykey-server = { path = "../vykey-server" }

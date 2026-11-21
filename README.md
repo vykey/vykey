@@ -64,6 +64,8 @@ show up as file names. Corrections welcome.</sub>
 - Auto-lock on inactivity (5 min by default), clipboard auto-clear after 30 s
 - Fingerprint unlock on Linux (fprintd), opt-in per vault — see below
 - Terminal client `vy`: full-screen TUI and Bitwarden CSV import
+- Sync between devices through a zero-knowledge server (`vykey-server`):
+  anonymous accounts, only encrypted data leaves the device
 
 ## Layout
 
@@ -156,7 +158,25 @@ What this protects against, and what not:
 sync; it never sees their contents. Accounts are anonymous: creating one
 returns a token (`vy1-…`), the only credential. Protocol, data layout and
 what the server can see: [docs/sync-protocol.md](docs/sync-protocol.md).
-The clients do not sync yet; this is the server side.
+
+In the desktop app: Settings → Sync → "Set up…": pick vykey Cloud
+(`sync.vykey.dev`, the default) or your own server, then create an account (the token is shown once, to be saved) or paste the
+token of an existing one. On a new device, the first screen offers
+"Restore from sync" next to creating a vault: paste the token, the vaults
+arrive and open with their master passwords. All vaults of the database sync; folders and
+entries of a vault sync while it is unlocked. Entries changed on two
+devices at once keep the other version as "… (conflict)". From the
+terminal:
+
+```sh
+vy sync init                    # new account on vykey Cloud
+vy sync init --server https://sync.example.com [--invite]  # …on your own server
+vy sync join [--server URL]     # existing account: asks for the token
+vy sync now --vault Work    # asks for the master password, syncs its entries
+vy sync status | token | leave
+```
+
+The server:
 
 ```sh
 vykey-server                          # serve on 127.0.0.1:8470, ./vykey-server.redb

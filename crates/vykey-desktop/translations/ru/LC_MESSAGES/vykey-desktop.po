@@ -962,3 +962,179 @@ msgstr "Вход по отпечатку заработает снова пос�
 
 msgid "Open “{0}” with a finger. The master password is still needed after a restart and at least once a day"
 msgstr "Открывать «{0}» отпечатком пальца. Мастер-пароль всё равно понадобится после перезагрузки и не реже раза в сутки"
+
+# ---- sync ----
+
+msgid "SYNC"
+msgstr "СИНХРОНИЗАЦИЯ"
+
+msgid "Sync between devices"
+msgstr "Синхронизация между устройствами"
+
+msgid "Through a server that stores only encrypted data. All vaults of this device are synced"
+msgstr "Через сервер, который хранит только зашифрованные данные. Синхронизируются все хранилища этого устройства"
+
+msgid "Set up…"
+msgstr "Настроить…"
+
+msgid "Syncing…"
+msgstr "Синхронизация…"
+
+msgid "Sync now"
+msgstr "Синхронизировать"
+
+msgid "Account token"
+msgstr "Токен аккаунта"
+
+msgid "Connects another device. Keep it secret: it cannot be recovered"
+msgstr "Нужен, чтобы подключить другое устройство. Храните в секрете: восстановить его нельзя"
+
+msgid "Copy"
+msgstr "Скопировать"
+
+msgid "Disconnect this device"
+msgstr "Отключить это устройство"
+
+msgid "Data stays here and on the server. Reconnecting needs the account token"
+msgstr "Данные останутся здесь и на сервере. Чтобы подключиться снова, понадобится токен аккаунта"
+
+msgid "Click again to disconnect"
+msgstr "Нажмите ещё раз, чтобы отключить"
+
+msgid "Disconnect"
+msgstr "Отключить"
+
+msgid "Enter the server address"
+msgstr "Введите адрес сервера"
+
+msgid "Paste the account token"
+msgstr "Вставьте токен аккаунта"
+
+msgid "Set up sync"
+msgstr "Настройка синхронизации"
+
+msgid "Save your account token"
+msgstr "Сохраните токен аккаунта"
+
+msgid "Vaults stay encrypted: the server only stores data it cannot read. Each vault is opened with its own master password, as here."
+msgstr "Хранилища остаются зашифрованными: сервер хранит только данные, которые не может прочитать. Каждое хранилище открывается своим мастер-паролем, как и здесь."
+
+msgid "Server"
+msgstr "Сервер"
+
+msgid "vykey Cloud"
+msgstr "vykey Cloud"
+
+msgid "{0} · ready to use, nothing to set up"
+msgstr "{0} · работает сразу, ничего настраивать не нужно"
+
+msgid "Recommended"
+msgstr "Рекомендуем"
+
+msgid "A vykey-server you run yourself"
+msgstr "vykey-server, который вы запустили сами"
+
+msgid "Own server"
+msgstr "Свой сервер"
+
+msgid "Server address"
+msgstr "Адрес сервера"
+
+msgid "Account"
+msgstr "Аккаунт"
+
+msgid "New account"
+msgstr "Новый аккаунт"
+
+msgid "I have a token"
+msgstr "У меня есть токен"
+
+msgid "I have an invite key"
+msgstr "У меня есть ключ приглашения"
+
+msgid "Invite key"
+msgstr "Ключ приглашения"
+
+msgid "From the server's owner"
+msgstr "От владельца сервера"
+
+msgid "Creating an account can take a few seconds: this device proves it is not a bot."
+msgstr "Создание аккаунта может занять несколько секунд: устройство доказывает, что оно не бот."
+
+msgid "Connecting…"
+msgstr "Подключение…"
+
+msgid "Create account"
+msgstr "Создать аккаунт"
+
+msgid "Connect"
+msgstr "Подключить"
+
+msgid "You need it to connect your other devices. It is the only key to this account: it cannot be recovered, and whoever has it can download your encrypted vaults. Keep it like a password."
+msgstr "Он нужен, чтобы подключить другие устройства. Это единственный ключ к аккаунту: восстановить его нельзя, а тот, у кого он есть, может скачать ваши зашифрованные хранилища. Храните его как пароль."
+
+msgid "I saved it"
+msgstr "Я сохранил"
+
+msgid "{0} · synced {1}"
+msgstr "{0} · синхронизировано {1}"
+
+msgid "{0} · not synced yet"
+msgstr "{0} · ещё не синхронизировано"
+
+msgid "{0} · {1}"
+msgstr "{0} · {1}"
+
+msgid "The server cannot be reached; vykey will retry"
+msgstr "Сервер недоступен, vykey повторит попытку"
+
+msgid "The server does not know this account"
+msgstr "Сервер не знает этот аккаунт"
+
+msgid "This server does not accept new accounts without an invite key"
+msgstr "Этот сервер не принимает новые аккаунты без ключа приглашения"
+
+msgid "The account is full on the server"
+msgstr "На сервере закончилось место для этого аккаунта"
+
+msgid "The server is busy; vykey will retry"
+msgstr "Сервер перегружен, vykey повторит попытку"
+
+msgid "Not a server address, e.g. https://sync.example.com"
+msgstr "Это не адрес сервера. Пример: https://sync.example.com"
+
+msgid "Use https:// (plain http:// only for a server on this computer)"
+msgstr "Используйте https:// (http:// — только для сервера на этом компьютере)"
+
+msgid "This is not a vykey account token"
+msgstr "Это не токен аккаунта vykey"
+
+msgid "Sync failed: {0}"
+msgstr "Ошибка синхронизации: {0}"
+
+msgid "Sync is on"
+msgstr "Синхронизация включена"
+
+msgid "Sync is off on this device"
+msgstr "Синхронизация на этом устройстве выключена"
+
+msgid "The master password of “{0}” was changed on another device"
+msgstr "Мастер-пароль хранилища «{0}» изменён на другом устройстве"
+
+msgid "Vault “{0}” was deleted on another device"
+msgstr "Хранилище «{0}» удалено на другом устройстве"
+
+msgid "or"
+msgstr "или"
+
+msgid "Already use vykey on another device?"
+msgstr "Уже пользуетесь vykey на другом устройстве?"
+
+msgid "Restore from sync"
+msgstr "Восстановить из синхронизации"
+
+msgid "Fetching your vaults from {0}…"
+msgstr "Загружаем ваши хранилища из {0}…"
+
+msgid "This account has no vaults yet: create the first one above"
+msgstr "В этом аккаунте пока нет хранилищ: создайте первое выше"

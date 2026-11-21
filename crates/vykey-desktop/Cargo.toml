@@ -16,7 +16,7 @@ path = "src/main.rs"
 arboard = { version = "3.7.0", features = ["wayland-data-control"] }
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 vykey-biometric.workspace = true
-vykey-core.workspace = true
+vykey-core = { workspace = true, features = ["http"] }
 # Software renderer by default (see `run`): no GPU drivers in the process,
 # ~30 MB RSS instead of ~270 MB. FemtoVG (OpenGL) is compiled in as an
 # opt-in: SLINT_BACKEND=winit-femtovg.

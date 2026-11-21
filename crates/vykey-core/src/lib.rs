@@ -15,6 +15,7 @@ pub mod paths;
 mod schema;
 pub mod settings;
 pub mod store;
+pub mod sync;
 pub mod totp;
 
 pub use error::{Error, Result};

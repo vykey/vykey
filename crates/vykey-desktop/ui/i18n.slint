@@ -38,6 +38,35 @@ export global Tr {
     public pure function copy-failed() -> string { @tr("Could not copy") }
     public pure function settings-save-failed() -> string { @tr("Could not save settings") }
 
+    // ---- sync ----
+    public pure function sync-cloud() -> string { @tr("vykey Cloud") }
+    public pure function sync-fetching(server: string) -> string { @tr("Fetching your vaults from {0}…", server) }
+    public pure function sync-account-empty() -> string {
+        @tr("This account has no vaults yet: create the first one above")
+    }
+    public pure function sync-synced(server: string, ago: string) -> string { @tr("{0} · synced {1}", server, ago) }
+    public pure function sync-never(server: string) -> string { @tr("{0} · not synced yet", server) }
+    public pure function sync-failed(server: string, reason: string) -> string { @tr("{0} · {1}", server, reason) }
+    public pure function sync-offline() -> string { @tr("The server cannot be reached; vykey will retry") }
+    public pure function sync-unknown-account() -> string { @tr("The server does not know this account") }
+    public pure function sync-registration-closed() -> string {
+        @tr("This server does not accept new accounts without an invite key")
+    }
+    public pure function sync-quota() -> string { @tr("The account is full on the server") }
+    public pure function sync-busy-server() -> string { @tr("The server is busy; vykey will retry") }
+    public pure function sync-bad-address() -> string { @tr("Not a server address, e.g. https://sync.example.com") }
+    public pure function sync-insecure() -> string {
+        @tr("Use https:// (plain http:// only for a server on this computer)")
+    }
+    public pure function sync-bad-token() -> string { @tr("This is not a vykey account token") }
+    public pure function sync-error(details: string) -> string { @tr("Sync failed: {0}", details) }
+    public pure function sync-on() -> string { @tr("Sync is on") }
+    public pure function sync-off() -> string { @tr("Sync is off on this device") }
+    public pure function sync-password-changed(name: string) -> string {
+        @tr("The master password of “{0}” was changed on another device", name)
+    }
+    public pure function sync-vault-gone(name: string) -> string { @tr("Vault “{0}” was deleted on another device", name) }
+
     // ---- auto-lock ----
     public pure function lock-seconds(n: int) -> string { @tr("{n} second" | "{n} seconds" % n) }
     public pure function lock-minutes(n: int) -> string { @tr("{n} minute" | "{n} minutes" % n) }
