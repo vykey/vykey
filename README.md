@@ -40,7 +40,10 @@ crates/vykey-core      vault format, crypto, storage, TOTP, audit (no UI)
 crates/vykey-biometric fingerprint unlock: fprintd + kernel keyring (Linux)
 crates/vykey-desktop   Slint desktop app, binary `vykey` (ui/, src/, translations/)
 crates/vykey-cli       terminal client, binary `vy` (ratatui)
-docs/                  vault format spec
+crates/vykey-sync-proto wire types of the sync protocol (client and server)
+crates/vykey-server    sync server, binary `vykey-server`
+docs/                  vault format and sync protocol specs
+packaging/             macOS bundle, server systemd unit
 assets/logo/           logo, wordmark, lockup and app icon (PNG)
 testdata/              fixture databases created by the Go app
 ```
@@ -51,6 +54,7 @@ testdata/              fixture databases created by the Go app
 cargo run -p vykey-desktop             # debug
 cargo build -p vykey-desktop --release # → target/release/vykey
 cargo build -p vykey-cli --release     # → target/release/vy
+cargo build -p vykey-server --release  # → target/release/vykey-server
 cargo test --workspace
 ```
 
@@ -118,6 +122,34 @@ What this protects against, and what not:
   unlock asks for the password.
 - The reader is claimed while vykey waits, so `sudo` in another terminal
   falls back to its password prompt until the check ends.
+
+## Sync server
+
+`vykey-server` keeps encrypted copies of vaults so several devices can
+sync; it never sees their contents. Accounts are anonymous: creating one
+returns a token (`vy1-…`), the only credential. Protocol, data layout and
+what the server can see: [docs/sync-protocol.md](docs/sync-protocol.md).
+The clients do not sync yet; this is the server side.
+
+```sh
+vykey-server                          # serve on 127.0.0.1:8470, ./vykey-server.redb
+vykey-server --db /var/lib/vykey-server/sync.redb --backup-dir /var/lib/vykey-server/backups
+vykey-server account new              # (server stopped) create an account, print the token
+VYKEY_SERVER_INVITE_KEY=… vykey-server  # clients with the key may create accounts
+vykey-server --open-registration      # anyone may create an account
+vykey-server --open-registration --pow 24  # …after ~1 s of proof of work
+vykey-server stats | gc | backup FILE # (server stopped)
+vykey-server --help
+```
+
+Registration is closed by default: accounts come from `account new`, or
+from clients that send the invite key, unless the server runs with
+`--open-registration`. It speaks plain HTTP: run it behind a TLS reverse proxy with
+`--trust-proxy` (systemd unit in [packaging/server/](packaging/server/)). One
+redb file holds everything; tombstones older than 90 days are collected
+daily, and `--backup-dir` writes a daily consistent copy (7 kept).
+Built on redb (storage) and hyper (HTTP/1.1, on tokio); the protocol
+logic itself is synchronous and transport-independent (`api.rs`).
 
 ## Configuration
 

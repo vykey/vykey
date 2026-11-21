@@ -1,0 +1,50 @@
+# systemd unit for vykey-server behind a reverse proxy on the same host.
+#
+#   install -m 755 target/release/vykey-server /usr/local/bin/
+#   install -m 644 packaging/server/vykey-server.service /etc/systemd/system/
+#   systemctl enable --now vykey-server
+#
+# Data and daily backups live in /var/lib/vykey-server. For `stats`, `gc`,
+# `backup` or `account new` stop the service first (the database allows one
+# process), e.g.:
+#   systemctl stop vykey-server
+#   VYKEY_SERVER_DB=/var/lib/vykey-server/sync.redb vykey-server stats
+#   systemctl start vykey-server
+
+[Unit]
+Description=vykey sync server
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/vykey-server serve --trust-proxy --backup-dir /var/lib/vykey-server/backups
+Environment=VYKEY_SERVER_DB=/var/lib/vykey-server/sync.redb
+Environment=VYKEY_SERVER_LISTEN=127.0.0.1:8470
+# Registration is closed by default; accounts come from `account new` (see
+# above). To let invited clients create accounts themselves, put
+# VYKEY_SERVER_INVITE_KEY=... into /etc/vykey-server.env (mode 600),
+# uncomment the next line and hand the key to the people you invite:
+#EnvironmentFile=/etc/vykey-server.env
+# To let anyone create an account, add --open-registration to ExecStart.
+Restart=on-failure
+
+DynamicUser=yes
+StateDirectory=vykey-server
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target
