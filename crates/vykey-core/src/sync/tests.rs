@@ -593,3 +593,92 @@ fn random_operations_converge() {
         }
     }
 }
+
+/// The server's database as it was at `backup`, served afresh.
+fn restore(backup: &std::path::Path) -> Server {
+    let db = Arc::new(RedbStore::open(backup).unwrap());
+    let api = Arc::new(Api::new(db.clone(), Config::default()));
+    Server { api, db }
+}
+
+#[test]
+fn server_restored_from_a_backup_loses_nothing() {
+    let server = Server::new();
+    let token = server.account();
+    let (a, va, gh, mail) = seeded(&server, &token);
+    let dir = tempfile::tempdir().unwrap();
+    let backup = dir.path().join("backup.redb");
+    server.db.backup(&backup).unwrap();
+
+    // After the backup: a new entry, an edit and a second vault.
+    let late = a
+        .store
+        .create_entry(&va, &login("Late", "late-pass"))
+        .unwrap();
+    a.store
+        .update_entry(&va, &gh, &login("GitHub", "edited"))
+        .unwrap();
+    let work = Vault::create("Work", "pw2").unwrap();
+    a.store.insert_vault(&work).unwrap();
+    a.store.create_entry(&work, &login("Jira", "j")).unwrap();
+    a.sync(&server, Some(&va));
+    a.sync(&server, Some(&work));
+    a.sync(&server, None);
+    assert!(clean(&a.store));
+    let before = snapshot(&a.store, &va);
+    let work_before = snapshot(&a.store, &work);
+
+    let restored = restore(&backup);
+    let r = a.sync(&restored, Some(&va));
+    assert!(!r.open_vault_deleted, "{r:?}");
+    assert_eq!(snapshot(&a.store, &va), before);
+    assert_eq!(snapshot(&a.store, &work), work_before);
+    assert_eq!(a.store.get_entry(&va, &mail).unwrap().title, "Mail");
+    a.sync(&restored, Some(&work));
+    assert!(clean(&a.store));
+
+    // Everything is back on the server: a new device gets all of it.
+    let b = Device::new(&token);
+    b.sync(&restored, None);
+    let vb = b.open("Personal", &va);
+    let wb = b.open("Work", &work);
+    b.sync(&restored, Some(&vb));
+    b.sync(&restored, Some(&wb));
+    assert_eq!(snapshot(&b.store, &vb), before);
+    assert_eq!(snapshot(&b.store, &wb), work_before);
+    assert_eq!(b.store.get_entry(&vb, &late).unwrap().title, "Late");
+}
+
+#[test]
+fn server_that_lost_everything_does_not_wipe_a_locked_device() {
+    let server = Server::new();
+    let token = server.account();
+    let (a, va, _, _) = seeded(&server, &token);
+    a.sync(&server, None);
+    let before = snapshot(&a.store, &va);
+
+    // An empty database where the account was created anew.
+    let empty = Server::new();
+    empty
+        .db
+        .create_account(&vykey_server::api::account_id(&token), 1)
+        .unwrap();
+    let r = a.sync(&empty, None);
+    assert!(!r.vaults_changed, "{r:?}");
+    assert_eq!(snapshot(&a.store, &va), before);
+    // The vault record went back at once; folders and entries at unlock.
+    assert_eq!(empty.api_records(&token), 1);
+    a.sync(&empty, Some(&va));
+    assert!(clean(&a.store));
+    assert_eq!(empty.api_records(&token), 4);
+}
+
+impl Server {
+    fn api_records(&self, token: &Token) -> u64 {
+        self.db
+            .account(&vykey_server::api::account_id(token))
+            .unwrap()
+            .unwrap()
+            .records
+    }
+}

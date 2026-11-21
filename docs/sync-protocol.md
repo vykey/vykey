@@ -134,10 +134,13 @@ Records whose `rev > since`, by ascending `rev`, at most `limit` (default
 **410 `resync_required`** when `since` is ahead of the account revision (the
 server was restored from a backup) or below the account's garbage-collection
 floor (a tombstone the client never saw was removed). The client then pulls
-from `since=0`, treats the result as complete, deletes local records missing
-from it unless they have unpushed local changes, and pushes everything it
-has changed or created (their `base_rev` is what the snapshot says, or 0 for
-records missing from it).
+from `since=0` and treats the result as complete. If the snapshot's `until`
+is below the revision the client had reached, the server went back in time
+(restored from a backup, or its data lost): local records missing from it
+were not deleted and are pushed again with `base_rev` 0. Otherwise local
+records missing from it are deleted unless they have unpushed local
+changes. Then the client pushes everything it has changed or created (their
+`base_rev` is what the snapshot says, or 0 for records missing from it).
 
 ### `POST /v1/push` → 200
 
@@ -257,7 +260,9 @@ Not enforced by the server, but assumed by it. The client is
   arrives second gets " (2)" appended (and the rename is synced).
 - **Full resync** (after 410): everything is pulled from `since=0`; local
   records the server no longer has are deleted unless changed locally, in
-  which case they are pushed as new.
+  which case they are pushed as new. If the server is behind the revision
+  the client had seen (restored from a backup), nothing is deleted: what it
+  is missing is pushed as new.
 - **Connecting** a database marks every local record changed, so all of it
   is uploaded and merged with what the account already has. Disconnecting
   keeps the data and forgets the server's revisions.

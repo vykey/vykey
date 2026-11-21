@@ -167,6 +167,7 @@ impl Session<'_> {
     // ---------- pull ----------
 
     fn pull(&mut self, mut since: u64, t: &dyn Transport) -> Result<(), SyncError> {
+        let last_rev = since;
         let mut full = false;
         let mut seen = HashSet::new();
         loop {
@@ -196,15 +197,24 @@ impl Session<'_> {
             }
         }
         if full {
-            self.forget_unseen(&seen)?;
+            // Revisions only grow, so a server now behind what we had seen
+            // was restored from a backup or lost its data: what it is
+            // missing was not deleted.
+            let rolled_back = since < last_rev;
+            self.forget_unseen(&seen, rolled_back)?;
             self.store.set_last_rev(since)?;
         }
         Ok(())
     }
 
     /// After a full resync: what was on the server but is no longer there
-    /// was deleted (its tombstone is gone); changed records are pushed anew.
-    fn forget_unseen(&mut self, seen: &HashSet<String>) -> Result<(), SyncError> {
+    /// was deleted (its tombstone is gone), unless the server was
+    /// `rolled_back`; then it is pushed anew, as are changed records.
+    fn forget_unseen(
+        &mut self,
+        seen: &HashSet<String>,
+        rolled_back: bool,
+    ) -> Result<(), SyncError> {
         for kind in [Kind::Entry, Kind::Folder, Kind::Vault] {
             for id in self.store.synced_ids(kind, None)? {
                 if seen.contains(&id) {
@@ -213,7 +223,9 @@ impl Session<'_> {
                 let Some((st, vault_id)) = self.store.state(kind, &id)? else {
                     continue;
                 };
-                if st.dirty {
+                if rolled_back {
+                    self.store.mark(kind, &id, 0, None, Some(true))?;
+                } else if st.dirty {
                     self.store.mark(kind, &id, 0, None, None)?;
                 } else {
                     self.store.drop_local(kind, &id)?;

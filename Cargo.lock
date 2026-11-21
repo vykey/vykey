@@ -6399,7 +6399,7 @@ dependencies = [
 
 [[package]]
 name = "vykey-biometric"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-channel",
  "async-io",
@@ -6413,7 +6413,7 @@ dependencies = [
 
 [[package]]
 name = "vykey-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "arboard",
  "chrono",
@@ -6429,7 +6429,7 @@ dependencies = [
 
 [[package]]
 name = "vykey-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aes-gcm",
  "argon2",
@@ -6451,7 +6451,7 @@ dependencies = [
 
 [[package]]
 name = "vykey-desktop"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "arboard",
  "chrono",
