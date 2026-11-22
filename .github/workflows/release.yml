@@ -111,13 +111,20 @@ jobs:
           codesign --force --deep --sign - "$app"
           codesign --force --sign - "$out/vy"
 
-          # Disk image: the app next to an Applications link to drag it
-          # onto, plus `vy`, LICENSE and README. hdiutil on CI runners
-          # sometimes fails with "Resource busy"; retry a few times.
-          ln -s /Applications "$out/Applications"
+          # Disk image: a Finder window with the app, an arrow and an
+          # Applications link to drag it onto, plus `vy`, LICENSE and README
+          # below. dmgbuild writes the window layout itself (no Finder
+          # scripting, which is flaky on CI runners).
+          python3 -m venv dist/venv
+          dist/venv/bin/pip install --quiet dmgbuild==1.6.5
+          tiffutil -cathidpicheck packaging/macos/dmg-background.png \
+            packaging/macos/dmg-background@2x.png -out dist/dmg-background.tiff
+          # hdiutil on CI runners sometimes fails with "Resource busy";
+          # retry a few times.
           for attempt in 1 2 3 4 5; do
-            hdiutil create -volname "vykey $version" -srcfolder "$out" \
-              -fs HFS+ -format UDZO -ov "dist/$name.dmg" && break
+            dist/venv/bin/dmgbuild -s packaging/macos/dmg-settings.py \
+              -D src="$out" -D bg=dist/dmg-background.tiff \
+              "vykey $version" "dist/$name.dmg" && break
             [ "$attempt" = 5 ] && exit 1
             sleep 5
           done
