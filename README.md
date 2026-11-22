@@ -197,6 +197,15 @@ vy sync now --vault Work    # asks for the master password, syncs its entries
 vy sync status | token | leave
 ```
 
+Install the latest release on Debian, Ubuntu or CentOS/RHEL/Fedora as a
+systemd service (add `--nginx` to also set up nginx and a Let's Encrypt
+certificate for your domain):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/vykey/vykey/main/packaging/server/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/vykey/vykey/main/packaging/server/install.sh | sudo bash -s -- --nginx
+```
+
 The server:
 
 ```sh
