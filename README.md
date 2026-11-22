@@ -67,6 +67,27 @@ show up as file names. Corrections welcome.</sub>
 - Sync between devices through a zero-knowledge server (`vykey-server`):
   anonymous accounts, only encrypted data leaves the device
 
+## Install
+
+Builds for Linux, macOS and Windows are on the
+[releases page](https://github.com/vykey/vykey/releases).
+
+**macOS.** Open the `.dmg` and drag **vykey** onto **Applications**. The app
+is not notarized by Apple yet, so the first launch is blocked with "Apple
+could not verify vykey is free of malware". Either:
+
+- open **System Settings → Privacy & Security**, scroll down and click
+  **Open Anyway** next to the vykey message, or
+- remove the quarantine flag in Terminal:
+
+  ```sh
+  xattr -dr com.apple.quarantine /Applications/vykey.app
+  ```
+
+The terminal client `vy` is in the same disk image; copy it somewhere on
+your `PATH` (e.g. `sudo cp /Volumes/vykey*/vy /usr/local/bin/`) and clear
+its quarantine flag the same way.
+
 ## Layout
 
 ```
